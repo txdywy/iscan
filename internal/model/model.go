@@ -34,6 +34,11 @@ const (
 	FindingQUICFailure         FindingType = "quic_handshake_failure"
 	FindingPathQuality         FindingType = "path_quality_degraded"
 	FindingLocalNetworkIssue   FindingType = "local_network_issue"
+	FindingDNSNXDOMAIN        FindingType = "dns_nxdomain"
+	FindingDNSSERVFAIL        FindingType = "dns_servfail"
+	FindingDNSREFUSED         FindingType = "dns_refused"
+	FindingDNSOtherRCODE      FindingType = "dns_other_rcode"
+	FindingDNSTransparentProxy FindingType = "dns_transparent_proxy"
 )
 
 type Target struct {
@@ -65,9 +70,10 @@ func (t Target) Validate() error {
 }
 
 type Resolver struct {
-	Name   string `json:"name"`
-	Server string `json:"server"`
-	System bool   `json:"system"`
+	Name      string `json:"name"`
+	Server    string `json:"server"`
+	System    bool   `json:"system"`
+	Transport string `json:"transport,omitempty"`
 }
 
 type ScanOptions struct {
@@ -77,7 +83,9 @@ type ScanOptions struct {
 	QUIC        bool          `json:"quic"`
 	Parallelism int           `json:"parallelism"`
 	ICMPPing    bool          `json:"icmp_ping,omitempty"`
-	TargetSet   string        `json:"target_set,omitempty"`
+	TargetSet      string        `json:"target_set,omitempty"`
+	DNSRateLimit   int           `json:"dns_rate_limit,omitempty"`
+	CustomResolvers []Resolver   `json:"custom_resolvers,omitempty"`
 }
 
 type ScanReport struct {
