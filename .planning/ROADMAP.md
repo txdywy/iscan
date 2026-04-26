@@ -12,6 +12,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 1: Critical Bug Fixes
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** Eliminate all documented data-corruption, timeout-propagation, and cancellation-cascade bugs so the tool produces correct results and always terminates within bounds.
 **Dependencies:** None (brownfield — existing codebase)
 **Delivery criteria:**
@@ -33,6 +34,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-007: Fix DNS TCP latency inflation — ensure TCP fallback timer starts before the connection attempt, not after UDP timeout (P8). Effort: S
 - [ ] T-008: Fix shared message object across UDP/TCP retry — create a fresh `dns.Msg` for each retry attempt instead of reusing the same pointer (PITFALLS finding). Effort: S
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-01: Traceroute ICMP ID collision fix (P0)
@@ -46,6 +54,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 2: Probe Interface Unification
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** All probes implement a single `Probe` interface with `ProbeResult` type-erased containers, middleware decorators for retry/timeout/logging, and `init()`-based registration. The scanner becomes a phase-driven executor that no longer needs per-probe callsites.
 **Dependencies:** Phase 1 (bug fixes stable before refactoring)
 **Delivery criteria:**
@@ -66,6 +75,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-014: Remove old standalone probe function signatures and flattened fields from `TargetResult`. Effort: S
 - [ ] T-015: Update MODEL.md and types to reflect unified result model. Effort: S
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-06: Unified `Probe` interface with `ProbeResult` type-erased container (P1)
@@ -79,6 +95,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 3: Missing Table Stakes
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** Users can run ICMP ping as an independent reachability check, use custom target sets from a JSON file, and scan IPv6 targets across all applicable probes.
 **Dependencies:** Phase 2 (new probes use unified interface; scanner declartive)
 **Delivery criteria:**
@@ -98,6 +115,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-021: Add IPv6 support to QUIC probe — verify quic-go handles IPv6 correctly, add dual-stack dialing. Effort: S
 - [ ] T-022: Update CLI flag validation for IPv6 addresses — ensure `--target` and `--target-set` accept raw IPv6 addresses. Effort: S
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-10: ICMP Ping probe (P1)
@@ -110,6 +134,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 4: DNS Enhancements
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** DNS probing produces richer diagnostic signal with RCODE-specific findings, encrypted transport options (DoH, DoT), system resolver RCODE extraction, and per-resolver rate limiting.
 **Dependencies:** Phase 2 (new DNS transports use unified interface); independent of Phase 3
 **Delivery criteria:**
@@ -128,6 +153,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-027: Implement per-resolver rate limiter — token bucket per resolver (default 20 qps), configurable via CLI or config. Effort: M
 - [ ] T-028: Detect transparent DNS proxies — query whoami.akamai.net (or similar) and compare resolved address against configured resolver address. Effort: M
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-05: DNS RCODEs surfaced separately — NXDOMAIN, SERVFAIL, REFUSED (P0)
@@ -140,6 +172,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 5: Classification and Profile Improvements
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** Classification produces evidence-weighted, composable findings. Profile computation separates control targets from diagnostic targets, enabling accurate cross-target correlation.
 **Dependencies:** Phase 3 (IPv6 findngs) and Phase 4 (RCODE-specific findings produce richer input for classifiers)
 **Delivery criteria:**
@@ -158,6 +191,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-033: Build cross-target correlation pass — compare control-target findings against diagnostic-target findings, generate divergence findings. Effort: M
 - [ ] T-034: Add TLS/QUIC divergence detector — if TLS succeeds but QUIC fails (or vice versa), generate "UDP blocked" or "QUIC filtered" finding. Effort: M
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-09: Control vs diagnostic target separation in profile (P1)
@@ -171,6 +211,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 6: Report Format Extensibility
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** Reports use a `Formatter` interface with registry so new output formats can be added without touching report internals. HTML self-contained report and CSV/YAML exports ship alongside existing JSON/tabwriter output. A `--format` flag replaces `--json` / `--summary`.
 **Dependencies:** Phase 2 (formatter interface mirrors probe interface pattern); can proceed in parallel with Phases 4-5
 **Delivery criteria:**
@@ -190,6 +231,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-039: Build YAML formatter via `gopkg.in/yaml.v3` or JSON-based YAML output. Effort: S
 - [ ] T-040: Add `--format` CLI flag, deprecate `--json`/`--summary`, maintain backward compatibility. Effort: M
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-14: Self-contained HTML report with color-coded protocol status table (P1)
@@ -202,6 +250,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 7: Advanced Probes
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** Users can probe WebSocket endpoints for WS/WSS connectivity and test SOCKS5/HTTP CONNECT proxy reachability — addressing niche but differentiating diagnostic scenarios that no competitor CLI covers.
 **Dependencies:** Phase 2 (new probes register via unified interface)
 **Delivery criteria:**
@@ -217,6 +266,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-043: Implement HTTP CONNECT proxy probe — manual HTTP CONNECT handshake via `net/http`, reports tunnel establishment status. Effort: M
 - [ ] T-044: Register all three probes via `init()` and add probe IDs to CLI help text. Effort: S
 
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+
 ### Alignment with Requirements
 
 - F-19: WebSocket (WS/WSS) handshake probe (P2)
@@ -229,6 +285,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 8: Analysis and Comparison
 
 **Status:** planned
+**Plans:** 3 plans
 **Goal:** Users can compare two scan results to identify changes over time and track historical trends with stored scan snapshots.
 **Dependencies:** Phase 6 (stable report output for comparison rendering); Phase 5 (consistent findings for diff)
 **Delivery criteria:**
@@ -246,6 +303,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 - [ ] T-048: Implement historical trend storage — save scan results to `~/.iscan/history/` with ISO-8601 timestamps. Effort: M
 - [ ] T-049: Build trend analysis — load historical results, compute finding frequency over time, display as text table. Effort: M
 - [ ] T-050: Add `iscan history` CLI command with `--store` and `--trend` subcommands. Effort: M
+
+
+### Plans
+
+- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
+- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
+- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
 
 ### Alignment with Requirements
 
