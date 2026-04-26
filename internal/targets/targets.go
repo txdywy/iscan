@@ -1,6 +1,55 @@
 package targets
 
-import "iscan/internal/model"
+import (
+	"encoding/json"
+	"os"
+
+	"iscan/internal/model"
+)
+
+// TargetSource provides a list of targets to scan.
+type TargetSource interface {
+	Load() ([]model.Target, error)
+}
+
+// BuiltinSource returns the built-in default target set.
+type BuiltinSource struct{}
+
+func (BuiltinSource) Load() ([]model.Target, error) {
+	return BuiltinTargets(), nil
+}
+
+// FileSource reads targets from a JSON file at the given path.
+type FileSource struct {
+	Path string
+}
+
+func (fs FileSource) Load() ([]model.Target, error) {
+	data, err := os.ReadFile(fs.Path)
+	if err != nil {
+		return nil, err
+	}
+	var targets []model.Target
+	if err := json.Unmarshal(data, &targets); err != nil {
+		return nil, err
+	}
+	for _, t := range targets {
+		if err := t.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	return targets, nil
+}
+
+// SelectSource returns the appropriate TargetSource based on the targetSet string.
+// An empty string or "builtin" returns BuiltinSource. Anything else is treated
+// as a file path for FileSource.
+func SelectSource(targetSet string) TargetSource {
+	if targetSet == "" || targetSet == "builtin" {
+		return BuiltinSource{}
+	}
+	return FileSource{Path: targetSet}
+}
 
 func BuiltinTargets() []model.Target {
 	return []model.Target{
