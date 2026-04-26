@@ -1,0 +1,142 @@
+package model
+
+import "time"
+
+type Layer string
+
+const (
+	LayerDNS   Layer = "dns"
+	LayerTCP   Layer = "tcp"
+	LayerTLS   Layer = "tls"
+	LayerHTTP  Layer = "http"
+	LayerTrace Layer = "trace"
+)
+
+type Confidence string
+
+const (
+	ConfidenceLow    Confidence = "low"
+	ConfidenceMedium Confidence = "medium"
+	ConfidenceHigh   Confidence = "high"
+)
+
+type FindingType string
+
+const (
+	FindingDNSInconsistent     FindingType = "dns_inconsistent"
+	FindingDNSSuspiciousAnswer FindingType = "dns_suspicious_answer"
+	FindingTCPConnectFailure   FindingType = "tcp_connect_failure"
+	FindingTLSHandshakeFailure FindingType = "tls_handshake_failure"
+	FindingSNICorrelated       FindingType = "sni_correlated_failure"
+	FindingHTTPFailure         FindingType = "http_application_failure"
+	FindingPathQuality         FindingType = "path_quality_degraded"
+	FindingLocalNetworkIssue   FindingType = "local_network_issue"
+)
+
+type Target struct {
+	Name       string   `json:"name"`
+	Domain     string   `json:"domain"`
+	Scheme     string   `json:"scheme"`
+	Ports      []int    `json:"ports"`
+	Control    bool     `json:"control"`
+	HTTPPath   string   `json:"http_path"`
+	CompareSNI []string `json:"compare_sni,omitempty"`
+}
+
+type Resolver struct {
+	Name   string `json:"name"`
+	Server string `json:"server"`
+	System bool   `json:"system"`
+}
+
+type ScanOptions struct {
+	Timeout time.Duration `json:"timeout"`
+	Retries int           `json:"retries"`
+	Trace   bool          `json:"trace"`
+}
+
+type ScanReport struct {
+	StartedAt time.Time      `json:"started_at"`
+	Duration  time.Duration  `json:"duration"`
+	Options   ScanOptions    `json:"options"`
+	Targets   []TargetResult `json:"targets"`
+	Findings  []Finding      `json:"findings"`
+	Warnings  []string       `json:"warnings,omitempty"`
+}
+
+type TargetResult struct {
+	Target   Target            `json:"target"`
+	DNS      []DNSObservation  `json:"dns"`
+	TCP      []TCPObservation  `json:"tcp"`
+	TLS      []TLSObservation  `json:"tls"`
+	HTTP     []HTTPObservation `json:"http"`
+	Trace    *TraceObservation `json:"trace,omitempty"`
+	Findings []Finding         `json:"findings"`
+}
+
+type DNSObservation struct {
+	Resolver string        `json:"resolver"`
+	Query    string        `json:"query"`
+	Type     string        `json:"type"`
+	Answers  []string      `json:"answers"`
+	CNAMEs   []string      `json:"cnames,omitempty"`
+	RCode    string        `json:"rcode"`
+	Latency  time.Duration `json:"latency"`
+	Success  bool          `json:"success"`
+	Error    string        `json:"error,omitempty"`
+}
+
+type TCPObservation struct {
+	Address   string        `json:"address"`
+	Host      string        `json:"host"`
+	Port      int           `json:"port"`
+	Latency   time.Duration `json:"latency"`
+	Success   bool          `json:"success"`
+	Error     string        `json:"error,omitempty"`
+	ErrorKind string        `json:"error_kind,omitempty"`
+}
+
+type TLSObservation struct {
+	Address    string        `json:"address"`
+	SNI        string        `json:"sni"`
+	Version    string        `json:"version,omitempty"`
+	ALPN       string        `json:"alpn,omitempty"`
+	CertSHA256 string        `json:"cert_sha256,omitempty"`
+	Latency    time.Duration `json:"latency"`
+	Success    bool          `json:"success"`
+	Error      string        `json:"error,omitempty"`
+}
+
+type HTTPObservation struct {
+	URL                 string        `json:"url"`
+	StatusCode          int           `json:"status_code,omitempty"`
+	Latency             time.Duration `json:"latency"`
+	DNSStartLatency     time.Duration `json:"dns_start_latency,omitempty"`
+	ConnectLatency      time.Duration `json:"connect_latency,omitempty"`
+	TLSHandshakeLatency time.Duration `json:"tls_handshake_latency,omitempty"`
+	FirstByteLatency    time.Duration `json:"first_byte_latency,omitempty"`
+	Success             bool          `json:"success"`
+	Error               string        `json:"error,omitempty"`
+}
+
+type TraceObservation struct {
+	Target  string        `json:"target"`
+	Hops    []TraceHop    `json:"hops,omitempty"`
+	Latency time.Duration `json:"latency"`
+	Success bool          `json:"success"`
+	Error   string        `json:"error,omitempty"`
+}
+
+type TraceHop struct {
+	TTL     int           `json:"ttl"`
+	Address string        `json:"address,omitempty"`
+	RTT     time.Duration `json:"rtt,omitempty"`
+	Error   string        `json:"error,omitempty"`
+}
+
+type Finding struct {
+	Type       FindingType `json:"type"`
+	Layer      Layer       `json:"layer"`
+	Confidence Confidence  `json:"confidence"`
+	Evidence   []string    `json:"evidence"`
+}
