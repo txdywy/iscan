@@ -46,16 +46,14 @@ than absolute censorship claims.`,
 		Use:   "scan",
 		Short: "Run builtin network diagnostics",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if targetSet != "builtin" {
-				return fmt.Errorf("unsupported target set %q", targetSet)
-			}
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			scan := scanner.Run(ctx, model.ScanOptions{
-				Timeout: timeout,
-				Retries: retries,
-				Trace:   trace,
-				QUIC:    quic,
+				Timeout:   timeout,
+				Retries:   retries,
+				Trace:     trace,
+				QUIC:      quic,
+				TargetSet: targetSet,
 			})
 			var prof *profile.Profile
 			var rec *recommend.Recommendation
