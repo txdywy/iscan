@@ -18,7 +18,7 @@ Detect network censorship — identify DNS/TLS/QUIC/HTTP layer blocking, filteri
 - ✓ HTTP application-layer probes with redirect prevention — existing
 - ✓ QUIC/UDP handshake probes with SNI comparison — existing
 - ✓ ICMP traceroute probes — existing
-- ✓ Classifier with 9 finding types (DNS inconsistent, suspicious DNS, TCP/TLS/HTTP/QUIC failure, SNI correlated, path quality) — existing
+- ✓ Classifier with 14 finding types (DNS inconsistent, suspicious DNS, TCP/TLS/HTTP/QUIC failure, SNI correlated, path quality, per-RCODE DNS findings, transparent DNS proxy) — existing
 - ✓ Network health profiling (DNS/TCP/TLS/QUIC/Path) — existing
 - ✓ Protocol ranking recommendation engine (long-lived/UDP/conservative/redundant) — existing
 - ✓ JSON and tabwriter-formatted terminal report output — existing
@@ -33,8 +33,8 @@ Detect network censorship — identify DNS/TLS/QUIC/HTTP layer blocking, filteri
 - [ ] **PROBE-03**: Custom target set support via JSON file (--target-set path)
 - [ ] **PROBE-04**: ICMP Ping probe (independent reachability check, no root required if possible)
 - [ ] **PROBE-05**: WebSocket (WS/WSS) handshake probe
-- [ ] **PROBE-06**: DNS over HTTPS (DoH) probe
-- [ ] **PROBE-07**: DNS over TLS (DoT) probe
+- [x] **PROBE-06**: DNS over HTTPS (DoH) probe — validated in Phase 4
+- [x] **PROBE-07**: DNS over TLS (DoT) probe — validated in Phase 4
 - [ ] **PROBE-08**: SOCKS/HTTP proxy protocol probe
 - [ ] **REPORT-01**: HTML report output with visual indicators
 - [ ] **REPORT-02**: Multi-format export (CSV, YAML)
@@ -55,7 +55,7 @@ Personal network diagnostics tool written in Go. Uses standard Go module layout 
 ## Constraints
 
 - **Language**: Go 1.24+ — no other languages
-- **Dependencies**: Minimal — current deps are cobra, miekg/dns, quic-go, golang.org/x/{net,sync}
+- **Dependencies**: Minimal — current deps are cobra, miekg/dns, quic-go, golang.org/x/{net,sync,time}
 - **Platform**: Cross-platform (macOS, Linux) — CLI only, no GUI
 - **Permissions**: Traceroute requires root/ICMP privileges; all other probes run without special permissions
 - **Output**: Terminal (tabwriter) + JSON always; HTML/CSV/YAML as additional formats
@@ -72,4 +72,4 @@ Personal network diagnostics tool written in Go. Uses standard Go module layout 
 
 ---
 
-*Last updated: 2026-04-26 after initialization*
+*Last updated: 2026-04-27 after Phase 4 (DNS Enhancements)*
