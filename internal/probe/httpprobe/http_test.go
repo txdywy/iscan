@@ -1,6 +1,7 @@
 package httpprobe_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,7 +16,7 @@ func TestProbeHTTPRecordsStatusAndFirstByte(t *testing.T) {
 	}))
 	defer server.Close()
 
-	observation := httpprobe.Probe(server.URL, 2*time.Second)
+	observation := httpprobe.Probe(context.Background(), server.URL, 2*time.Second)
 	if !observation.Success {
 		t.Fatalf("expected HTTP success, got %#v", observation)
 	}

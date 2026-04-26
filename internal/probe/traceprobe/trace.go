@@ -1,8 +1,10 @@
 package traceprobe
 
 import (
+	"context"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/net/icmp"
@@ -11,7 +13,7 @@ import (
 	"iscan/internal/model"
 )
 
-func Probe(target string, timeout time.Duration) (observation model.TraceObservation) {
+func Probe(ctx context.Context, target string, timeout time.Duration) (observation model.TraceObservation) {
 	start := time.Now()
 	observation = model.TraceObservation{Target: target}
 	defer func() {
@@ -45,7 +47,14 @@ func Probe(target string, timeout time.Duration) (observation model.TraceObserva
 	defer conn.Close()
 	packetConn := ipv4.NewPacketConn(conn)
 
+	var consecutiveEmpty int
 	for ttl := 1; ttl <= 30; ttl++ {
+		select {
+		case <-ctx.Done():
+			observation.Error = ctx.Err().Error()
+			return observation
+		default:
+		}
 		if err := packetConn.SetTTL(ttl); err != nil {
 			observation.Error = err.Error()
 			observation.Latency = time.Since(start)
@@ -53,12 +62,24 @@ func Probe(target string, timeout time.Duration) (observation model.TraceObserva
 		}
 		hop, done := probeHop(conn, ip, ttl, timeout)
 		observation.Hops = append(observation.Hops, hop)
+		if !done && isReadTimeout(hop.Error) {
+			consecutiveEmpty++
+			if consecutiveEmpty >= 3 {
+				break
+			}
+		} else {
+			consecutiveEmpty = 0
+		}
 		if done {
 			observation.Success = true
 			break
 		}
 	}
 	return observation
+}
+
+func isReadTimeout(errStr string) bool {
+	return strings.Contains(strings.ToLower(errStr), "timeout")
 }
 
 func probeHop(conn *icmp.PacketConn, ip net.IP, ttl int, timeout time.Duration) (model.TraceHop, bool) {

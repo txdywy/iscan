@@ -1,6 +1,7 @@
 package dnsprobe
 
 import (
+	"context"
 	"net"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 	"iscan/internal/model"
 )
 
-func Probe(resolver model.Resolver, domain string, qtype uint16, timeout time.Duration) model.DNSObservation {
+func Probe(ctx context.Context, resolver model.Resolver, domain string, qtype uint16, timeout time.Duration) model.DNSObservation {
 	query := mdns.Fqdn(domain)
 	observation := model.DNSObservation{
 		Resolver: resolver.Name,
@@ -25,7 +26,7 @@ func Probe(resolver model.Resolver, domain string, qtype uint16, timeout time.Du
 	}
 
 	start := time.Now()
-	resp, _, err := client.Exchange(msg, server)
+	resp, _, err := client.ExchangeContext(ctx, msg, server)
 	observation.Latency = time.Since(start)
 	if err != nil {
 		observation.Error = err.Error()

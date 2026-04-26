@@ -10,7 +10,7 @@ import (
 	"iscan/internal/model"
 )
 
-func Probe(url string, timeout time.Duration) model.HTTPObservation {
+func Probe(ctx context.Context, url string, timeout time.Duration) model.HTTPObservation {
 	observation := model.HTTPObservation{URL: url}
 	client := &http.Client{
 		Timeout: timeout,
@@ -42,7 +42,7 @@ func Probe(url string, timeout time.Duration) model.HTTPObservation {
 		},
 	}
 
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodGet, url, nil)
 	if err != nil {
 		observation.Error = err.Error()
 		return observation

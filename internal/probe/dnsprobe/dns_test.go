@@ -1,6 +1,7 @@
 package dnsprobe_test
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 func TestProbeARecordsFromResolver(t *testing.T) {
 	server := startDNSServer(t)
-	observation := dnsprobe.Probe(model.Resolver{Name: "local", Server: server}, "example.com", mdns.TypeA, 2*time.Second)
+	observation := dnsprobe.Probe(context.Background(), model.Resolver{Name: "local", Server: server}, "example.com", mdns.TypeA, 2*time.Second)
 
 	if !observation.Success {
 		t.Fatalf("expected DNS success, got %#v", observation)

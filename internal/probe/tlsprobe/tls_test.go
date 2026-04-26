@@ -1,6 +1,7 @@
 package tlsprobe_test
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
@@ -21,7 +22,7 @@ func TestProbeTLSSuccessRecordsVersionAndALPN(t *testing.T) {
 
 	host, port := splitServerAddr(t, server.Listener.Addr().String())
 
-	observation := tlsprobe.Probe(host, port, "example.com", []string{"h2", "http/1.1"}, 2*time.Second, true)
+	observation := tlsprobe.Probe(context.Background(), host, port, "example.com", []string{"h2", "http/1.1"}, 2*time.Second, true)
 	if !observation.Success {
 		t.Fatalf("expected TLS success, got %#v", observation)
 	}
@@ -48,7 +49,7 @@ func TestProbeTLSHandshakeFailure(t *testing.T) {
 	}()
 
 	host, port := splitServerAddr(t, listener.Addr().String())
-	observation := tlsprobe.Probe(host, port, "example.com", nil, 2*time.Second, true)
+	observation := tlsprobe.Probe(context.Background(), host, port, "example.com", nil, 2*time.Second, true)
 
 	if observation.Success {
 		t.Fatalf("expected TLS failure, got %#v", observation)

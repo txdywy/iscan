@@ -1,6 +1,7 @@
 package tlsprobe
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -11,15 +12,17 @@ import (
 	"iscan/internal/model"
 )
 
-func Probe(host string, port int, sni string, nextProtos []string, timeout time.Duration, insecureSkipVerify bool) model.TLSObservation {
+func Probe(ctx context.Context, host string, port int, sni string, nextProtos []string, timeout time.Duration, insecureSkipVerify bool) model.TLSObservation {
 	address := net.JoinHostPort(host, strconv.Itoa(port))
 	start := time.Now()
 	dialer := net.Dialer{Timeout: timeout}
-	conn, err := tls.DialWithDialer(&dialer, "tcp", address, &tls.Config{
+	cfg := &tls.Config{
 		ServerName:         sni,
 		NextProtos:         nextProtos,
 		InsecureSkipVerify: insecureSkipVerify,
-	})
+	}
+	tlsDialer := &tls.Dialer{NetDialer: &dialer, Config: cfg}
+	conn, err := tlsDialer.DialContext(ctx, "tcp", address)
 	latency := time.Since(start)
 	if err != nil {
 		return model.TLSObservation{
@@ -32,7 +35,17 @@ func Probe(host string, port int, sni string, nextProtos []string, timeout time.
 	}
 	defer conn.Close()
 
-	state := conn.ConnectionState()
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return model.TLSObservation{
+			Address: address,
+			SNI:     sni,
+			Latency: latency,
+			Success: false,
+			Error:   "connection is not a tls.Conn",
+		}
+	}
+	state := tlsConn.ConnectionState()
 	observation := model.TLSObservation{
 		Address: address,
 		SNI:     sni,

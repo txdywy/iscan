@@ -8,6 +8,7 @@ import (
 	"time"
 
 	mdns "github.com/miekg/dns"
+	"golang.org/x/sync/errgroup"
 
 	"iscan/internal/classifier"
 	"iscan/internal/model"
@@ -33,18 +34,31 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 		Options:   options,
 	}
 	resolvers := targets.BuiltinResolvers()
-	for _, target := range targets.BuiltinTargets() {
-		select {
-		case <-ctx.Done():
-			report.Warnings = append(report.Warnings, ctx.Err().Error())
-			report.Duration = time.Since(start)
-			return report
-		default:
-		}
-		result := scanTarget(target, resolvers, options)
-		result.Findings = classifier.Classify(result)
+	targetList := targets.BuiltinTargets()
+	results := make([]model.TargetResult, len(targetList))
+
+	group, gCtx := errgroup.WithContext(ctx)
+	group.SetLimit(4)
+	for i, target := range targetList {
+		i, target := i, target
+		group.Go(func() error {
+			select {
+			case <-gCtx.Done():
+				return gCtx.Err()
+			default:
+			}
+			result := scanTarget(gCtx, target, resolvers, options)
+			result.Findings = classifier.Classify(result)
+			results[i] = result
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil && err != context.Canceled {
+		report.Warnings = append(report.Warnings, err.Error())
+	}
+	for i, result := range results {
 		if result.Trace != nil && result.Trace.Error != "" && isLocalTraceError(result.Trace.Error) {
-			report.Warnings = append(report.Warnings, target.Domain+": trace unavailable: "+result.Trace.Error)
+			report.Warnings = append(report.Warnings, targetList[i].Domain+": trace unavailable: "+result.Trace.Error)
 		}
 		report.Findings = append(report.Findings, result.Findings...)
 		report.Targets = append(report.Targets, result)
@@ -53,11 +67,11 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 	return report
 }
 
-func scanTarget(target model.Target, resolvers []model.Resolver, options model.ScanOptions) model.TargetResult {
+func scanTarget(ctx context.Context, target model.Target, resolvers []model.Resolver, options model.ScanOptions) model.TargetResult {
 	result := model.TargetResult{Target: target}
 	for _, resolver := range resolvers {
-		result.DNS = append(result.DNS, probeDNS(resolver, target.Domain, mdns.TypeA, options.Timeout))
-		result.DNS = append(result.DNS, probeDNS(resolver, target.Domain, mdns.TypeAAAA, options.Timeout))
+		result.DNS = append(result.DNS, probeDNS(ctx, resolver, target.Domain, mdns.TypeA, options.Timeout))
+		result.DNS = append(result.DNS, probeDNS(ctx, resolver, target.Domain, mdns.TypeAAAA, options.Timeout))
 	}
 
 	addresses := uniqueAnswers(result.DNS)
@@ -67,7 +81,7 @@ func scanTarget(target model.Target, resolvers []model.Resolver, options model.S
 	for _, port := range target.Ports {
 		for _, address := range addresses {
 			for attempt := 0; attempt < options.Retries; attempt++ {
-				observation := tcp.Probe(address, port, options.Timeout)
+				observation := tcp.Probe(ctx, address, port, options.Timeout)
 				result.TCP = append(result.TCP, observation)
 				if observation.Success {
 					break
@@ -80,15 +94,15 @@ func scanTarget(target model.Target, resolvers []model.Resolver, options model.S
 		if !observation.Success || observation.Port != 443 {
 			continue
 		}
-		probeTLSWithRetries(&result, observation.Host, observation.Port, target.Domain, options)
+		probeTLSWithRetries(ctx, &result, observation.Host, observation.Port, target.Domain, options)
 		for _, compareSNI := range target.CompareSNI {
-			probeTLSWithRetries(&result, observation.Host, observation.Port, compareSNI, options)
+			probeTLSWithRetries(ctx, &result, observation.Host, observation.Port, compareSNI, options)
 		}
 	}
 
 	if target.Scheme == "http" || hasSuccessfulTLS(result.TLS) {
 		for attempt := 0; attempt < options.Retries; attempt++ {
-			observation := httpprobe.Probe(targetURL(target), options.Timeout)
+			observation := httpprobe.Probe(ctx, targetURL(target), options.Timeout)
 			result.HTTP = append(result.HTTP, observation)
 			if observation.Success {
 				break
@@ -96,15 +110,15 @@ func scanTarget(target model.Target, resolvers []model.Resolver, options model.S
 		}
 	}
 	if options.Trace {
-		trace := traceprobe.Probe(target.Domain, options.Timeout)
+		trace := traceprobe.Probe(ctx, target.Domain, options.Timeout)
 		result.Trace = &trace
 	}
 	return result
 }
 
-func probeTLSWithRetries(result *model.TargetResult, host string, port int, sni string, options model.ScanOptions) {
+func probeTLSWithRetries(ctx context.Context, result *model.TargetResult, host string, port int, sni string, options model.ScanOptions) {
 	for attempt := 0; attempt < options.Retries; attempt++ {
-		observation := tlsprobe.Probe(host, port, sni, []string{"h2", "http/1.1"}, options.Timeout, true)
+		observation := tlsprobe.Probe(ctx, host, port, sni, []string{"h2", "http/1.1"}, options.Timeout, true)
 		result.TLS = append(result.TLS, observation)
 		if observation.Success {
 			break
@@ -112,9 +126,9 @@ func probeTLSWithRetries(result *model.TargetResult, host string, port int, sni 
 	}
 }
 
-func probeDNS(resolver model.Resolver, domain string, qtype uint16, timeout time.Duration) model.DNSObservation {
+func probeDNS(ctx context.Context, resolver model.Resolver, domain string, qtype uint16, timeout time.Duration) model.DNSObservation {
 	if !resolver.System {
-		return dnsprobe.Probe(resolver, domain, qtype, timeout)
+		return dnsprobe.Probe(ctx, resolver, domain, qtype, timeout)
 	}
 	start := time.Now()
 	observation := model.DNSObservation{

@@ -13,11 +13,11 @@ import (
 	"iscan/internal/model"
 )
 
-func Probe(host string, port int, timeout time.Duration) model.TCPObservation {
+func Probe(ctx context.Context, host string, port int, timeout time.Duration) model.TCPObservation {
 	address := net.JoinHostPort(host, strconv.Itoa(port))
 	start := time.Now()
 	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(context.Background(), "tcp", address)
+	conn, err := dialer.DialContext(ctx, "tcp", address)
 	latency := time.Since(start)
 	if err != nil {
 		return model.TCPObservation{

@@ -1,6 +1,7 @@
 package tcp_test
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestProbeConnectSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	observation := tcp.Probe(host, mustPort(t, port), 2*time.Second)
+	observation := tcp.Probe(context.Background(), host, mustPort(t, port), 2*time.Second)
 	if !observation.Success {
 		t.Fatalf("expected TCP success, got %#v", observation)
 	}
@@ -53,7 +54,7 @@ func TestClassifyConnectionRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	observation := tcp.Probe(host, mustPort(t, port), 500*time.Millisecond)
+	observation := tcp.Probe(context.Background(), host, mustPort(t, port), 500*time.Millisecond)
 	if observation.Success {
 		t.Fatalf("expected TCP failure, got %#v", observation)
 	}
