@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"time"
@@ -12,12 +13,27 @@ import (
 )
 
 func Probe(ctx context.Context, url string, timeout time.Duration) model.HTTPObservation {
-	observation := model.HTTPObservation{URL: url}
+	return probe(ctx, url, "", timeout)
+}
+
+func ProbeWithAddress(ctx context.Context, url string, dialAddress string, timeout time.Duration) model.HTTPObservation {
+	return probe(ctx, url, dialAddress, timeout)
+}
+
+func probe(ctx context.Context, url string, dialAddress string, timeout time.Duration) model.HTTPObservation {
+	observation := model.HTTPObservation{URL: url, DialAddress: dialAddress}
+	dialer := net.Dialer{Timeout: timeout}
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if dialAddress != "" {
+		transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, dialAddress)
+		}
+	}
 	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+		Timeout:   timeout,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -67,8 +83,8 @@ func Probe(ctx context.Context, url string, timeout time.Duration) model.HTTPObs
 		return observation
 	}
 	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 	}()
 	observation.StatusCode = resp.StatusCode
 	observation.Success = resp.StatusCode >= 200 && resp.StatusCode < 400

@@ -33,7 +33,9 @@ func Probe(ctx context.Context, host string, port int, sni string, nextProtos []
 			Error:   err.Error(),
 		}
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {

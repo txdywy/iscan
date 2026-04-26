@@ -41,7 +41,9 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 		observation.Error = err.Error()
 		return observation
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	packetConn := ipv4.NewPacketConn(conn)
 
 	var consecutiveEmpty int

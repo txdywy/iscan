@@ -27,9 +27,9 @@ func JSONExtended(scan model.ScanReport, prof *profile.Profile, rec *recommend.R
 func Summary(scan model.ScanReport) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TARGET\tDNS\tTCP\tTLS\tQUIC\tHTTP\tTRACE\tFINDINGS")
+	_, _ = fmt.Fprintln(w, "TARGET\tDNS\tTCP\tTLS\tQUIC\tHTTP\tTRACE\tFINDINGS")
 	for _, target := range scan.Targets {
-		fmt.Fprintf(
+		_, _ = fmt.Fprintf(
 			w,
 			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			target.Target.Domain,
@@ -42,7 +42,7 @@ func Summary(scan model.ScanReport) string {
 			findingTypes(target.Findings),
 		)
 	}
-	w.Flush()
+	_ = w.Flush()
 	for _, warning := range scan.Warnings {
 		fmt.Fprintf(&b, "warning: %s\n", warning)
 	}

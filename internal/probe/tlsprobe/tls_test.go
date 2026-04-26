@@ -39,12 +39,14 @@ func TestProbeTLSHandshakeFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() {
+		_ = listener.Close()
+	}()
 
 	go func() {
 		conn, err := listener.Accept()
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 

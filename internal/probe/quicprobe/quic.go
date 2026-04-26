@@ -42,7 +42,9 @@ func Probe(ctx context.Context, host string, port int, sni string, alpn []string
 			Error:   err.Error(),
 		}
 	}
-	defer conn.CloseWithError(0, "")
+	defer func() {
+		_ = conn.CloseWithError(0, "")
+	}()
 
 	state := conn.ConnectionState().TLS
 	observation := model.QUICObservation{

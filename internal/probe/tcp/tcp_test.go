@@ -14,13 +14,15 @@ func TestProbeConnectSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() {
+		_ = listener.Close()
+	}()
 
 	done := make(chan struct{})
 	go func() {
 		conn, err := listener.Accept()
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 		close(done)
 	}()
@@ -47,7 +49,7 @@ func TestClassifyConnectionRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := listener.Addr().String()
-	listener.Close()
+	_ = listener.Close()
 
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {

@@ -115,9 +115,10 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 	}
 
 	if target.Scheme == "http" || HasSuccessfulTLSForSNI(result.TLS, target.Domain) {
+		dialAddress := firstHTTPDialAddress(result, target)
 		obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
 			func() (model.HTTPObservation, bool) {
-				o := httpprobe.Probe(ctx, TargetURL(target), options.Timeout)
+				o := httpprobe.ProbeWithAddress(ctx, TargetURL(target), dialAddress, options.Timeout)
 				return o, o.Success
 			})
 		result.HTTP = append(result.HTTP, obs)
@@ -229,15 +230,39 @@ func TargetURL(target model.Target) string {
 	return (&url.URL{Scheme: target.Scheme, Host: target.Domain, Path: path}).String()
 }
 
+func firstHTTPDialAddress(result model.TargetResult, target model.Target) string {
+	if target.Scheme == "https" {
+		for _, observation := range result.TLS {
+			if observation.Success && observation.SNI == target.Domain {
+				return observation.Address
+			}
+		}
+	}
+	for _, observation := range result.TCP {
+		if observation.Success {
+			return observation.Address
+		}
+	}
+	return ""
+}
+
 // retryWithBackoff calls probe up to maxAttempts times with exponential backoff.
 // Returns immediately on success or context cancellation.
 func retryWithBackoff[T any](ctx context.Context, maxAttempts int, baseDelay time.Duration, probe func() (T, bool)) T {
 	var zero T
+	var last T
+	var hasLast bool
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if ctx.Err() != nil {
+			if hasLast {
+				return last
+			}
 			return zero
 		}
-		if result, ok := probe(); ok {
+		result, ok := probe()
+		last = result
+		hasLast = true
+		if ok {
 			return result
 		}
 		if attempt < maxAttempts-1 {
@@ -246,10 +271,16 @@ func retryWithBackoff[T any](ctx context.Context, maxAttempts int, baseDelay tim
 			select {
 			case <-ctx.Done():
 				timer.Stop()
+				if hasLast {
+					return last
+				}
 				return zero
 			case <-timer.C:
 			}
 		}
+	}
+	if hasLast {
+		return last
 	}
 	return zero
 }

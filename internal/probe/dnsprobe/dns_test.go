@@ -58,6 +58,18 @@ func TestProbeRetriesOverTCPWhenTruncated(t *testing.T) {
 	}
 }
 
+func TestProbeMarksTruncatedTCPFallbackFailureAsFailure(t *testing.T) {
+	server := startUDPOnlyDNSServer(t, true)
+	observation := dnsprobe.Probe(context.Background(), model.Resolver{Name: "local", Server: server}, "example.com", mdns.TypeA, 2*time.Second)
+
+	if observation.Success {
+		t.Fatalf("expected DNS failure when truncated TCP fallback fails, got %#v", observation)
+	}
+	if !strings.Contains(observation.Error, "tcp_fallback_failed") {
+		t.Fatalf("expected TCP fallback error, got %#v", observation)
+	}
+}
+
 func startDNSServer(t *testing.T, truncated bool) string {
 	t.Helper()
 	mux := mdns.NewServeMux()
@@ -103,6 +115,40 @@ func startDNSServer(t *testing.T, truncated bool) string {
 	t.Cleanup(func() {
 		_ = udpServer.Shutdown()
 		_ = tcpServer.Shutdown()
+	})
+	return listener.LocalAddr().String()
+}
+
+func startUDPOnlyDNSServer(t *testing.T, truncated bool) string {
+	t.Helper()
+	mux := mdns.NewServeMux()
+	mux.HandleFunc(".", func(w mdns.ResponseWriter, r *mdns.Msg) {
+		msg := new(mdns.Msg)
+		msg.SetReply(r)
+		for _, question := range r.Question {
+			if question.Qtype == mdns.TypeA {
+				msg.Answer = append(msg.Answer, &mdns.A{
+					Hdr: mdns.RR_Header{Name: question.Name, Rrtype: mdns.TypeA, Class: mdns.ClassINET, Ttl: 60},
+					A:   net.ParseIP("203.0.113.10"),
+				})
+			}
+		}
+		if truncated {
+			msg.Truncated = true
+		}
+		_ = w.WriteMsg(msg)
+	})
+	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	udpServer := &mdns.Server{PacketConn: listener, Handler: mux}
+	go func() {
+		_ = udpServer.ActivateAndServe()
+	}()
+
+	t.Cleanup(func() {
+		_ = udpServer.Shutdown()
 	})
 	return listener.LocalAddr().String()
 }

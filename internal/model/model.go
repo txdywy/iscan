@@ -131,6 +131,7 @@ type TLSObservation struct {
 
 type HTTPObservation struct {
 	URL                 string        `json:"url"`
+	DialAddress         string        `json:"dial_address,omitempty"`
 	StatusCode          int           `json:"status_code,omitempty"`
 	Latency             time.Duration `json:"latency"`
 	DNSStartLatency     time.Duration `json:"dns_start_latency,omitempty"`
