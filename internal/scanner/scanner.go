@@ -39,11 +39,12 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 		Options:   options,
 	}
 	resolvers := targets.BuiltinResolvers()
-	targetList := targets.BuiltinTargets()
-	for _, target := range targetList {
-		if err := target.Validate(); err != nil {
-			report.Warnings = append(report.Warnings, err.Error())
-		}
+	source := targets.SelectSource(options.TargetSet)
+	targetList, err := source.Load()
+	if err != nil {
+		report.Warnings = append(report.Warnings, "targets: "+err.Error())
+		report.Duration = time.Since(start)
+		return report
 	}
 	results := make([]model.TargetResult, len(targetList))
 

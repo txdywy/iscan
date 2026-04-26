@@ -74,6 +74,7 @@ type ScanOptions struct {
 	Trace       bool          `json:"trace"`
 	QUIC        bool          `json:"quic"`
 	Parallelism int           `json:"parallelism"`
+	TargetSet   string        `json:"target_set,omitempty"`
 }
 
 type ScanReport struct {
