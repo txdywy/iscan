@@ -13,6 +13,7 @@ import (
 
 	"iscan/internal/model"
 	"iscan/internal/profile"
+	"iscan/internal/targets"
 	"iscan/internal/recommend"
 	"iscan/internal/report"
 	"iscan/internal/scanner"
@@ -38,6 +39,8 @@ func rootCommand() *cobra.Command {
 	var analyze bool
 	var pingTimeout time.Duration
 	var icmpPing bool
+	var dnsRateLimit int
+	var resolverFlags []string
 
 	cmd := &cobra.Command{
 		Use:   "iscan",
@@ -53,13 +56,34 @@ than absolute censorship claims.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
+
+			// Process --resolver flags into CustomResolvers
+			var customResolvers []model.Resolver
+			for _, r := range resolverFlags {
+				transport := targets.DetectTransport(r)
+				server := r
+				if strings.HasPrefix(r, "https://") {
+					server = strings.TrimPrefix(r, "https://")
+				} else if strings.HasPrefix(r, "tls://") {
+					server = strings.TrimPrefix(r, "tls://")
+				}
+				customResolvers = append(customResolvers, model.Resolver{
+					Name:      server,
+					Server:    server,
+					Transport: transport,
+				})
+			}
+			targets.AddCustomResolvers(customResolvers)
+
 			scan := scanner.Run(ctx, model.ScanOptions{
-					Timeout: timeout,
-					Retries: retries,
-					Trace: trace,
-					QUIC: quic,
-					ICMPPing: icmpPing,
-					TargetSet: targetSet,
+					Timeout:          timeout,
+					Retries:          retries,
+					Trace:            trace,
+					QUIC:             quic,
+					ICMPPing:         icmpPing,
+					TargetSet:        targetSet,
+					DNSRateLimit:     dnsRateLimit,
+					CustomResolvers:  customResolvers,
 			})
 			var prof *profile.Profile
 			var rec *recommend.Recommendation
@@ -103,6 +127,8 @@ than absolute censorship claims.`,
 	scanCmd.Flags().StringVar(&targetSet, "target-set", "builtin", "target set to scan")
 	scanCmd.Flags().BoolVar(&analyze, "analyze", false, "include network profile and protocol rankings")
 	scanCmd.Flags().BoolVar(&icmpPing, "icmp-ping", false, "enable ICMP ping probe")
+	scanCmd.Flags().IntVar(&dnsRateLimit, "dns-rate-limit", 20, "max DNS queries/sec per resolver (0=unlimited)")
+	scanCmd.Flags().StringSliceVar(&resolverFlags, "resolver", nil, "custom DNS resolver (https://host or tls://host for DoH/DoT, plain host for UDP)")
 
 	pingCmd := &cobra.Command{
 		Use:   "ping <target>",
