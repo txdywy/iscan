@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"iscan/internal/model"
+	"iscan/internal/profile"
+	"iscan/internal/recommend"
 	"iscan/internal/report"
 	"iscan/internal/scanner"
 )
@@ -27,6 +29,7 @@ func rootCommand() *cobra.Command {
 	var retries int
 	var trace bool
 	var targetSet string
+	var analyze bool
 
 	cmd := &cobra.Command{
 		Use:   "iscan",
@@ -44,8 +47,22 @@ func rootCommand() *cobra.Command {
 				Retries: retries,
 				Trace:   trace,
 			})
+			var prof *profile.Profile
+			var rec *recommend.Recommendation
+			if analyze {
+				p := profile.BuildProfile(scan)
+				prof = &p
+				r := recommend.Rank(scan, p)
+				rec = &r
+			}
 			if jsonPath != "" {
-				bytes, err := report.JSON(scan)
+				var bytes []byte
+				var err error
+				if analyze {
+					bytes, err = report.JSONExtended(scan, prof, rec)
+				} else {
+					bytes, err = report.JSON(scan)
+				}
 				if err != nil {
 					return err
 				}
@@ -54,7 +71,11 @@ func rootCommand() *cobra.Command {
 				}
 			}
 			if summary {
-				fmt.Print(report.Summary(scan))
+				if analyze {
+					fmt.Print(report.SummaryExtended(scan, rec))
+				} else {
+					fmt.Print(report.Summary(scan))
+				}
 			}
 			return nil
 		},
@@ -65,6 +86,7 @@ func rootCommand() *cobra.Command {
 	scanCmd.Flags().IntVar(&retries, "retries", 3, "retry count recorded in report")
 	scanCmd.Flags().BoolVar(&trace, "trace", true, "enable privileged ICMP trace probe")
 	scanCmd.Flags().StringVar(&targetSet, "target-set", "builtin", "target set to scan")
+	scanCmd.Flags().BoolVar(&analyze, "analyze", false, "include network profile and protocol rankings")
 	cmd.AddCommand(scanCmd)
 	return cmd
 }

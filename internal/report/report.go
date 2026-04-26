@@ -6,10 +6,21 @@ import (
 	"strings"
 
 	"iscan/internal/model"
+	"iscan/internal/profile"
+	"iscan/internal/recommend"
 )
 
 func JSON(scan model.ScanReport) ([]byte, error) {
 	return json.MarshalIndent(scan, "", "  ")
+}
+
+func JSONExtended(scan model.ScanReport, prof *profile.Profile, rec *recommend.Recommendation) ([]byte, error) {
+	out := struct {
+		Scan           model.ScanReport             `json:"scan"`
+		Profile        *profile.Profile             `json:"profile,omitempty"`
+		Recommendation *recommend.Recommendation     `json:"recommendation,omitempty"`
+	}{Scan: scan, Profile: prof, Recommendation: rec}
+	return json.MarshalIndent(out, "", "  ")
 }
 
 func Summary(scan model.ScanReport) string {
@@ -32,6 +43,36 @@ func Summary(scan model.ScanReport) string {
 		fmt.Fprintf(&builder, "warning: %s\n", warning)
 	}
 	return builder.String()
+}
+
+func SummaryExtended(scan model.ScanReport, rec *recommend.Recommendation) string {
+	builder := SummaryBuilder{}
+	builder.WriteString(Summary(scan))
+	if rec != nil {
+		builder.WriteString("\nPROTOCOL RANKINGS\n")
+		for _, r := range rec.Rankings {
+			fmt.Fprintf(&builder, "  %s  score:%.2f  %s\n", icon(r.Score), r.Score, r.Category)
+			for _, reason := range r.Reasons {
+				fmt.Fprintf(&builder, "    %s\n", reason)
+			}
+		}
+	}
+	return builder.String()
+}
+
+func icon(score float64) string {
+	switch {
+	case score >= 0.7:
+		return "●"
+	case score >= 0.4:
+		return "◑"
+	default:
+		return "○"
+	}
+}
+
+type SummaryBuilder struct {
+	strings.Builder
 }
 
 func statusDNS(observations []model.DNSObservation) string {
