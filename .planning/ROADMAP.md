@@ -99,11 +99,11 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 3: Missing Table Stakes
 
 **Status:** planned
-**Plans:** 5 plans
+**Plans:** 3 plans
 **Goal:** Users can run ICMP ping as an independent reachability check, use custom target sets from a JSON file, and scan IPv6 targets across all applicable probes.
-**Dependencies:** Phase 2 (new probes use unified interface; scanner declartive)
+**Dependencies:** Phase 2 (new probes use unified interface; scanner declarative)
 **Delivery criteria:**
-  - `iscan ping <target>` runs an ICMP echo probe and prints RTT (works without root on systems with ping capabilities, uses priviledged ICMP socket otherwise).
+  - `iscan ping <target>` runs an ICMP echo probe and prints RTT (works without root on systems with ping capabilities, uses privileged ICMP socket otherwise).
   - `iscan scan --target-set path/to/targets.json` loads custom targets from JSON and runs the full probe suite.
   - All probes (DNS, TCP, TLS, HTTP, QUIC, trace) accept IPv6 addresses and produce correct results.
   - Traceroute supports ICMPv6 for IPv6 targets.
@@ -122,11 +122,9 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
-- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
-- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
-- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
-- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
+- [ ] 03-01-PLAN.md -- ICMP Ping Probe (Wave 1): Model types (LayerPing, PingObservation), probe + adapter in internal/probe/icmpping/, ping subcommand + --icmp-ping flag, scanner wiring
+- [ ] 03-02-PLAN.md -- Custom Target Sets (Wave 2): TargetSource interface, BuiltinSource + FileSource, ScanOptions.TargetSet, --target-set flag, scanner integration
+- [ ] 03-03-PLAN.md -- IPv6 Support (Wave 3): Target.AddressFamily, IPv6 resolvers, DNS AAAA queries, traceroute ICMPv6, adapter dual-stack wiring, CLI IPv6 validation
 
 ### Alignment
 
@@ -182,7 +180,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 **Status:** planned
 **Plans:** 5 plans
 **Goal:** Classification produces evidence-weighted, composable findings. Profile computation separates control targets from diagnostic targets, enabling accurate cross-target correlation.
-**Dependencies:** Phase 3 (IPv6 findngs) and Phase 4 (RCODE-specific findings produce richer input for classifiers)
+**Dependencies:** Phase 3 (IPv6 findings) and Phase 4 (RCODE-specific findings produce richer input for classifiers)
 **Delivery criteria:**
   - `Detector` interface exists with registered implementations per finding type — heuristics are decoupled from the monolithic `Classify()` function.
   - Dynamic confidence scoring replaces static LOW/MEDIUM/HIGH — confidence is proportional to evidence count, corroboration, and cross-target agreement.
