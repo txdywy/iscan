@@ -13,7 +13,15 @@ import (
 func Classify(result model.TargetResult) []model.Finding {
 	now := time.Now()
 	var findings []model.Finding
-	if dnsInconsistent(result.DNS) {
+
+	dnsObs := collectObservations[model.DNSObservation](result.Results, model.LayerDNS)
+	tcpObs := collectObservations[model.TCPObservation](result.Results, model.LayerTCP)
+	tlsObs := collectObservations[model.TLSObservation](result.Results, model.LayerTLS)
+	httpObs := collectObservations[model.HTTPObservation](result.Results, model.LayerHTTP)
+	quicObs := collectObservations[model.QUICObservation](result.Results, model.LayerQUIC)
+	traceObs := collectObservation[model.TraceObservation](result.Results, model.LayerTrace)
+
+	if dnsInconsistent(dnsObs) {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingDNSInconsistent,
 			Layer:      model.LayerDNS,
@@ -22,7 +30,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if evidence := suspiciousDNS(result.DNS); len(evidence) > 0 {
+	if evidence := suspiciousDNS(dnsObs); len(evidence) > 0 {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingDNSSuspiciousAnswer,
 			Layer:      model.LayerDNS,
@@ -31,7 +39,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if evidence := aggregateFailures(result.TCP,
+	if evidence := aggregateFailures(tcpObs,
 		func(o model.TCPObservation) string { return fmt.Sprintf("%s:%d", o.Host, o.Port) },
 		func(o model.TCPObservation) bool { return o.Success },
 		func(o model.TCPObservation) string {
@@ -46,7 +54,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if evidence := aggregateFailures(result.TLS,
+	if evidence := aggregateFailures(tlsObs,
 		func(o model.TLSObservation) string { return o.Address + "|" + o.SNI },
 		func(o model.TLSObservation) bool { return o.Success },
 		func(o model.TLSObservation) string { return fmt.Sprintf("%s failed: %s", o.SNI, o.Error) },
@@ -59,7 +67,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if evidence := sniCorrelatedFailures(result.TLS); len(evidence) > 0 {
+	if evidence := sniCorrelatedFailures(tlsObs); len(evidence) > 0 {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingSNICorrelated,
 			Layer:      model.LayerTLS,
@@ -68,7 +76,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if evidence := aggregateFailures(result.HTTP,
+	if evidence := aggregateFailures(httpObs,
 		func(o model.HTTPObservation) string { return o.URL },
 		func(o model.HTTPObservation) bool { return o.Success },
 		func(o model.HTTPObservation) string {
@@ -86,7 +94,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if evidence := aggregateFailures(result.QUIC,
+	if evidence := aggregateFailures(quicObs,
 		func(o model.QUICObservation) string { return o.Address + "|" + o.SNI },
 		func(o model.QUICObservation) bool { return o.Success },
 		func(o model.QUICObservation) string { return fmt.Sprintf("%s failed: %s", o.SNI, o.Error) },
@@ -99,12 +107,12 @@ func Classify(result model.TargetResult) []model.Finding {
 			ObservedAt: now,
 		})
 	}
-	if result.Trace != nil && !result.Trace.Success && !model.IsLocalPermissionError(result.Trace.Error) {
+	if traceObs != nil && !traceObs.Success && !model.IsLocalPermissionError(traceObs.Error) {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingPathQuality,
 			Layer:      model.LayerTrace,
 			Confidence: model.ConfidenceLow,
-			Evidence:   []string{result.Trace.Error},
+			Evidence:   []string{traceObs.Error},
 			ObservedAt: now,
 		})
 	}
@@ -251,4 +259,29 @@ func sniCorrelatedFailures(observations []model.TLSObservation) []string {
 
 func isSuspiciousIP(ip net.IP) bool {
 	return ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+}
+
+// collectObservations extracts all observations of type T for the given layer.
+func collectObservations[T any](results []model.ProbeResult, layer model.Layer) []T {
+	var out []T
+	for _, r := range results {
+		if r.Layer == layer {
+			if obs, ok := r.Data.(T); ok {
+				out = append(out, obs)
+			}
+		}
+	}
+	return out
+}
+
+// collectObservation extracts the first observation of type T for the given layer, or nil.
+func collectObservation[T any](results []model.ProbeResult, layer model.Layer) *T {
+	for _, r := range results {
+		if r.Layer == layer {
+			if obs, ok := r.Data.(T); ok {
+				return &obs
+			}
+		}
+	}
+	return nil
 }

@@ -116,11 +116,12 @@ func qualityTier(score float64) QualityTier {
 func extractISP(report model.ScanReport) ISPInfo {
 	info := ISPInfo{}
 	for _, target := range report.Targets {
-		if target.Trace == nil || len(target.Trace.Hops) == 0 {
+		traceObs := collectObservation[model.TraceObservation](target.Results, model.LayerTrace)
+		if traceObs == nil || len(traceObs.Hops) == 0 {
 			continue
 		}
 		if info.FirstHop == "" {
-			hop := target.Trace.Hops[0]
+			hop := traceObs.Hops[0]
 			info.FirstHop = hop.Address
 		}
 	}
@@ -134,7 +135,8 @@ func profileDNS(report model.ScanReport) DNSHealth {
 	var latencyCount int
 
 	for _, target := range report.Targets {
-		for _, obs := range target.DNS {
+		dnsObs := collectObservations[model.DNSObservation](target.Results, model.LayerDNS)
+		for _, obs := range dnsObs {
 			resolvers[obs.Resolver] = struct{}{}
 			if obs.Latency > 0 {
 				totalLatency += obs.Latency
@@ -172,7 +174,8 @@ func profileTCP(report model.ScanReport) TCPHealth {
 	var latencyCount int
 
 	for _, target := range report.Targets {
-		for _, obs := range target.TCP {
+		tcpObs := collectObservations[model.TCPObservation](target.Results, model.LayerTCP)
+		for _, obs := range tcpObs {
 			total++
 			if obs.Latency > 0 {
 				totalLatency += obs.Latency
@@ -200,7 +203,8 @@ func profileTLS(report model.ScanReport) TLSHealth {
 	versions := map[string]struct{}{}
 	var successes, total int
 	for _, target := range report.Targets {
-		for _, obs := range target.TLS {
+		tlsObs := collectObservations[model.TLSObservation](target.Results, model.LayerTLS)
+		for _, obs := range tlsObs {
 			total++
 			if obs.Success {
 				successes++
@@ -229,23 +233,24 @@ func profilePath(report model.ScanReport) PathHealth {
 	h := PathHealth{}
 	var rtts []float64
 	for _, target := range report.Targets {
-		if target.Trace == nil {
+		traceObs := collectObservation[model.TraceObservation](target.Results, model.LayerTrace)
+		if traceObs == nil {
 			continue
 		}
 		h.TraceAvailable = true
-		if model.IsLocalPermissionError(target.Trace.Error) {
+		if model.IsLocalPermissionError(traceObs.Error) {
 			h.TraceAvailable = false
 			continue
 		}
-		if target.Trace.Success {
+		if traceObs.Success {
 			h.Reachable = true
 		}
-		for _, hop := range target.Trace.Hops {
+		for _, hop := range traceObs.Hops {
 			if hop.RTT > 0 {
 				rtts = append(rtts, float64(hop.RTT))
 			}
 		}
-		hops := len(target.Trace.Hops)
+		hops := len(traceObs.Hops)
 		if hops > h.HopCount {
 			h.HopCount = hops
 		}
@@ -302,7 +307,8 @@ func profileQUIC(report model.ScanReport) QUICHealth {
 	h := QUICHealth{}
 	var successes, total int
 	for _, target := range report.Targets {
-		for _, obs := range target.QUIC {
+		quicObs := collectObservations[model.QUICObservation](target.Results, model.LayerQUIC)
+		for _, obs := range quicObs {
 			total++
 			if obs.Success {
 				successes++
@@ -336,4 +342,29 @@ func countFindings(report model.ScanReport, typ model.FindingType) int {
 		}
 	}
 	return n
+}
+
+// collectObservations extracts all observations of type T for the given layer.
+func collectObservations[T any](results []model.ProbeResult, layer model.Layer) []T {
+	var out []T
+	for _, r := range results {
+		if r.Layer == layer {
+			if obs, ok := r.Data.(T); ok {
+				out = append(out, obs)
+			}
+		}
+	}
+	return out
+}
+
+// collectObservation extracts the first observation of type T for the given layer, or nil.
+func collectObservation[T any](results []model.ProbeResult, layer model.Layer) *T {
+	for _, r := range results {
+		if r.Layer == layer {
+			if obs, ok := r.Data.(T); ok {
+				return &obs
+			}
+		}
+	}
+	return nil
 }

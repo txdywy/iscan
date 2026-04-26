@@ -13,10 +13,12 @@ func TestSummaryIncludesTargetAndFinding(t *testing.T) {
 		Targets: []model.TargetResult{
 			{
 				Target: model.Target{Name: "example", Domain: "example.com"},
-				DNS:    []model.DNSObservation{{Success: true}},
-				TCP:    []model.TCPObservation{{Success: true}},
-				TLS:    []model.TLSObservation{{Success: true}},
-				HTTP:   []model.HTTPObservation{{Success: true, StatusCode: 204}},
+				Results: []model.ProbeResult{
+					{Layer: model.LayerDNS, Data: model.DNSObservation{Success: true}},
+					{Layer: model.LayerTCP, Data: model.TCPObservation{Success: true}},
+					{Layer: model.LayerTLS, Data: model.TLSObservation{Success: true}},
+					{Layer: model.LayerHTTP, Data: model.HTTPObservation{Success: true, StatusCode: 204}},
+				},
 				Findings: []model.Finding{{
 					Type:       model.FindingDNSInconsistent,
 					Layer:      model.LayerDNS,

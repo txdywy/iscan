@@ -2,22 +2,23 @@ package scanner
 
 import (
 	"context"
-	"net"
 	"net/url"
 	"sort"
 	"time"
 
-	mdns "github.com/miekg/dns"
 	"golang.org/x/sync/errgroup"
+
+	_ "iscan/internal/probe/dnsprobe"
+	_ "iscan/internal/probe/httpprobe"
+	_ "iscan/internal/probe/quicprobe"
+	_ "iscan/internal/probe/tcp"
+	_ "iscan/internal/probe/tlsprobe"
+	_ "iscan/internal/probe/traceprobe"
 
 	"iscan/internal/classifier"
 	"iscan/internal/model"
-	"iscan/internal/probe/dnsprobe"
-	"iscan/internal/probe/httpprobe"
-	"iscan/internal/probe/quicprobe"
-	"iscan/internal/probe/tcp"
-	"iscan/internal/probe/tlsprobe"
-	"iscan/internal/probe/traceprobe"
+	"iscan/internal/probe"
+	"iscan/internal/probe/middleware"
 	"iscan/internal/targets"
 )
 
@@ -46,31 +47,39 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 	}
 	results := make([]model.TargetResult, len(targetList))
 
-	group, gCtx := errgroup.WithContext(ctx)
+	probes := buildProbes(options)
+
+	var group errgroup.Group
 	group.SetLimit(options.Parallelism)
 	for i, target := range targetList {
 		i, target := i, target
 		group.Go(func() error {
-			select {
-			case <-gCtx.Done():
-				return gCtx.Err()
-			default:
-			}
-			result := scanTarget(gCtx, target, resolvers, options)
+			targetCtx, targetCancel := context.WithCancel(ctx)
+			defer targetCancel()
+			result := scanTarget(targetCtx, target, resolvers, options, probes)
 			result.Findings = classifier.Classify(result)
 			results[i] = result
 			return nil
 		})
 	}
-	if err := group.Wait(); err != nil && err != context.Canceled {
-		report.Warnings = append(report.Warnings, err.Error())
+	if err := group.Wait(); err != nil {
+		report.Warnings = append(report.Warnings, "scanner: "+err.Error())
 	}
 	for i, result := range results {
 		if result.Target.Name == "" {
-			continue // target was cancelled before scan started
+			continue
 		}
-		if result.Trace != nil && result.Trace.Error != "" && model.IsLocalPermissionError(result.Trace.Error) {
-			report.Warnings = append(report.Warnings, targetList[i].Domain+": trace unavailable: "+result.Trace.Error)
+		if result.Error != "" {
+			report.Warnings = append(report.Warnings, targetList[i].Domain+": "+result.Error)
+		}
+		for _, pr := range result.Results {
+			if pr.Layer == model.LayerTrace {
+				if obs, ok := pr.Data.(model.TraceObservation); ok && !obs.Success {
+					if model.IsLocalPermissionError(obs.Error) {
+						report.Warnings = append(report.Warnings, targetList[i].Domain+": trace unavailable: "+obs.Error)
+					}
+				}
+			}
 		}
 		report.Findings = append(report.Findings, result.Findings...)
 		report.Targets = append(report.Targets, result)
@@ -79,122 +88,65 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 	return report
 }
 
-func scanTarget(ctx context.Context, target model.Target, resolvers []model.Resolver, options model.ScanOptions) model.TargetResult {
-	result := model.TargetResult{Target: target}
-	for _, resolver := range resolvers {
-		if ctx.Err() != nil {
-			return result
+func buildProbes(options model.ScanOptions) []probe.Probe {
+	var probes []probe.Probe
+	timeout := options.Timeout
+
+	add := func(layer model.Layer) {
+		p, ok := probe.Registry[layer]
+		if !ok {
+			return
 		}
-		result.DNS = append(result.DNS, probeDNS(ctx, resolver, target.Domain, mdns.TypeA, options.Timeout))
-		result.DNS = append(result.DNS, probeDNS(ctx, resolver, target.Domain, mdns.TypeAAAA, options.Timeout))
+		p = middleware.Chain(p,
+			middleware.Timeout(timeout),
+			middleware.Retry(options.Retries, 500*time.Millisecond),
+			middleware.Logging(nil),
+		)
+		probes = append(probes, p)
 	}
 
-	addresses := UniqueAnswers(result.DNS)
-	if len(addresses) == 0 {
-		addresses = []string{target.Domain}
-	}
-	for _, port := range target.Ports {
-		for _, address := range addresses {
-			obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
-				func() (model.TCPObservation, bool) {
-					o := tcp.Probe(ctx, address, port, options.Timeout)
-					return o, o.Success
-				})
-			result.TCP = append(result.TCP, obs)
-		}
-	}
-
-	for _, observation := range result.TCP {
-		if !observation.Success {
-			continue
-		}
-		probeTLSWithRetries(ctx, &result, observation.Host, observation.Port, target.Domain, options)
-		for _, compareSNI := range target.CompareSNI {
-			probeTLSWithRetries(ctx, &result, observation.Host, observation.Port, compareSNI, options)
-		}
-	}
-
-	if target.Scheme == "http" || HasSuccessfulTLSForSNI(result.TLS, target.Domain) {
-		dialAddress := firstHTTPDialAddress(result, target)
-		obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
-			func() (model.HTTPObservation, bool) {
-				o := httpprobe.ProbeWithAddress(ctx, TargetURL(target), dialAddress, options.Timeout)
-				return o, o.Success
-			})
-		result.HTTP = append(result.HTTP, obs)
-	}
-	if options.QUIC && target.QUICPort > 0 {
-		quicPort := target.QUICPort
-		for _, address := range addresses {
-			if ctx.Err() != nil {
-				break
-			}
-			obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
-				func() (model.QUICObservation, bool) {
-					o := quicprobe.Probe(ctx, address, quicPort, target.Domain, []string{"h3"}, options.Timeout)
-					return o, o.Success
-				})
-			result.QUIC = append(result.QUIC, obs)
-			for _, compareSNI := range target.CompareSNI {
-				if ctx.Err() != nil {
-					break
-				}
-				obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
-					func() (model.QUICObservation, bool) {
-						o := quicprobe.Probe(ctx, address, quicPort, compareSNI, []string{"h3"}, options.Timeout)
-						return o, o.Success
-					})
-				result.QUIC = append(result.QUIC, obs)
-			}
-		}
+	add(model.LayerDNS)
+	add(model.LayerTCP)
+	add(model.LayerTLS)
+	add(model.LayerHTTP)
+	if options.QUIC {
+		add(model.LayerQUIC)
 	}
 	if options.Trace {
-		trace := traceprobe.Probe(ctx, target.Domain, options.Timeout)
-		result.Trace = &trace
+		add(model.LayerTrace)
 	}
+	return probes
+}
+
+func scanTarget(ctx context.Context, target model.Target, resolvers []model.Resolver, options model.ScanOptions, probes []probe.Probe) model.TargetResult {
+	result := model.TargetResult{
+		Target:  target,
+		Results: make([]model.ProbeResult, 0, len(probes)),
+	}
+
+	for _, p := range probes {
+		pr := p.Run(ctx, target)
+		result.Results = append(result.Results, pr)
+	}
+
 	return result
 }
 
-func probeTLSWithRetries(ctx context.Context, result *model.TargetResult, host string, port int, sni string, options model.ScanOptions) {
-	obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
-		func() (model.TLSObservation, bool) {
-			o := tlsprobe.Probe(ctx, host, port, sni, []string{"h2", "http/1.1"}, options.Timeout, true)
-			return o, o.Success
-		})
-	result.TLS = append(result.TLS, obs)
-}
-
-func probeDNS(ctx context.Context, resolver model.Resolver, domain string, qtype uint16, timeout time.Duration) model.DNSObservation {
-	if !resolver.System {
-		return dnsprobe.Probe(ctx, resolver, domain, qtype, timeout)
-	}
-	start := time.Now()
-	observation := model.DNSObservation{
-		Resolver: resolver.Name,
-		Query:    domain,
-		Type:     mdns.TypeToString[qtype],
-	}
-	network := "ip4"
-	if qtype == mdns.TypeAAAA {
-		network = "ip6"
-	}
-	ips, err := net.DefaultResolver.LookupIP(ctx, network, domain)
-	observation.Latency = time.Since(start)
-	if err != nil {
-		observation.Error = err.Error()
-		return observation
-	}
-	for _, ip := range ips {
-		if qtype == mdns.TypeA && ip.To4() != nil {
-			observation.Answers = append(observation.Answers, ip.String())
+// probeContext derives a child context with a per-probe timeout.
+// If the parent context has a deadline, the per-probe timeout is
+// capped to the remaining time before that deadline so that a single
+// probe cannot exhaust the entire window.
+func probeContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining < timeout {
+			timeout = remaining
 		}
-		if qtype == mdns.TypeAAAA && ip.To4() == nil {
-			observation.Answers = append(observation.Answers, ip.String())
+		if timeout <= 0 {
+			timeout = time.Nanosecond
 		}
 	}
-	observation.Success = true
-	observation.RCode = "NOERROR"
-	return observation
+	return context.WithTimeout(ctx, timeout)
 }
 
 func UniqueAnswers(observations []model.DNSObservation) []string {
@@ -228,22 +180,6 @@ func TargetURL(target model.Target) string {
 		path = "/"
 	}
 	return (&url.URL{Scheme: target.Scheme, Host: target.Domain, Path: path}).String()
-}
-
-func firstHTTPDialAddress(result model.TargetResult, target model.Target) string {
-	if target.Scheme == "https" {
-		for _, observation := range result.TLS {
-			if observation.Success && observation.SNI == target.Domain {
-				return observation.Address
-			}
-		}
-	}
-	for _, observation := range result.TCP {
-		if observation.Success {
-			return observation.Address
-		}
-	}
-	return ""
 }
 
 // retryWithBackoff calls probe up to maxAttempts times with exponential backoff.

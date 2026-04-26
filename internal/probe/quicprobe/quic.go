@@ -28,7 +28,7 @@ func Probe(ctx context.Context, host string, port int, sni string, alpn []string
 	}
 	quicConf := &quic.Config{
 		MaxIdleTimeout:       timeout,
-		HandshakeIdleTimeout: timeout,
+		HandshakeIdleTimeout: timeout / 2,
 	}
 
 	conn, err := quic.DialAddr(ctx, address, tlsConf, quicConf)

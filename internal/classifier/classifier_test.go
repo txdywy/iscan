@@ -10,9 +10,9 @@ import (
 func TestClassifyReportsDNSInconsistencyWithoutPoisoning(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "example", Domain: "example.com"},
-		DNS: []model.DNSObservation{
-			{Resolver: "system", Answers: []string{"93.184.216.34"}},
-			{Resolver: "public", Answers: []string{"93.184.216.35"}},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Answers: []string{"93.184.216.34"}}},
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "public", Answers: []string{"93.184.216.35"}}},
 		},
 	}
 
@@ -29,11 +29,11 @@ func TestClassifyReportsDNSInconsistencyWithoutPoisoning(t *testing.T) {
 func TestClassifyDoesNotCompareAAndAAAAAsInconsistent(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "dualstack", Domain: "example.com"},
-		DNS: []model.DNSObservation{
-			{Resolver: "system", Type: "A", Answers: []string{"93.184.216.34"}},
-			{Resolver: "system", Type: "AAAA", Answers: []string{"2606:2800:220:1:248:1893:25c8:1946"}},
-			{Resolver: "public", Type: "A", Answers: []string{"93.184.216.34"}},
-			{Resolver: "public", Type: "AAAA", Answers: []string{"2606:2800:220:1:248:1893:25c8:1946"}},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Type: "A", Answers: []string{"93.184.216.34"}}},
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Type: "AAAA", Answers: []string{"2606:2800:220:1:248:1893:25c8:1946"}}},
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "public", Type: "A", Answers: []string{"93.184.216.34"}}},
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "public", Type: "AAAA", Answers: []string{"2606:2800:220:1:248:1893:25c8:1946"}}},
 		},
 	}
 
@@ -47,9 +47,9 @@ func TestClassifyDoesNotCompareAAndAAAAAsInconsistent(t *testing.T) {
 func TestClassifyReportsSuspiciousDNSForPrivateAnswer(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "blocked", Domain: "blocked.example"},
-		DNS: []model.DNSObservation{
-			{Resolver: "system", Answers: []string{"10.0.0.1"}},
-			{Resolver: "public", Answers: []string{"93.184.216.34"}},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Answers: []string{"10.0.0.1"}}},
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "public", Answers: []string{"93.184.216.34"}}},
 		},
 	}
 
@@ -63,8 +63,8 @@ func TestClassifyReportsSuspiciousDNSForPrivateAnswer(t *testing.T) {
 func TestClassifyKeepsSingleTLSFailureLowConfidence(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "tls", Domain: "tls.example"},
-		TLS: []model.TLSObservation{
-			{SNI: "tls.example", Success: false, Error: "remote error: tls: handshake failure"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerTLS, Data: model.TLSObservation{SNI: "tls.example", Success: false, Error: "remote error: tls: handshake failure"}},
 		},
 	}
 
@@ -82,9 +82,9 @@ func TestClassifyKeepsSingleTLSFailureLowConfidence(t *testing.T) {
 func TestClassifyReportsSNICorrelatedFailureWhenSameAddressDiffersBySNI(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "sni", Domain: "sni.example"},
-		TLS: []model.TLSObservation{
-			{Address: "203.0.113.10:443", SNI: "sni.example", Success: false, Error: "connection reset"},
-			{Address: "203.0.113.10:443", SNI: "example.com", Success: true},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerTLS, Data: model.TLSObservation{Address: "203.0.113.10:443", SNI: "sni.example", Success: false, Error: "connection reset"}},
+			{Layer: model.LayerTLS, Data: model.TLSObservation{Address: "203.0.113.10:443", SNI: "example.com", Success: true}},
 		},
 	}
 
@@ -98,8 +98,8 @@ func TestClassifyReportsSNICorrelatedFailureWhenSameAddressDiffersBySNI(t *testi
 func TestClassifyReportsHTTPApplicationFailure(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "http", Domain: "http.example"},
-		HTTP: []model.HTTPObservation{
-			{URL: "https://http.example/", StatusCode: 503, Success: false, Error: "status 503"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerHTTP, Data: model.HTTPObservation{URL: "https://http.example/", StatusCode: 503, Success: false, Error: "status 503"}},
 		},
 	}
 
@@ -113,8 +113,8 @@ func TestClassifyReportsHTTPApplicationFailure(t *testing.T) {
 func TestClassifyReportsQUICHandshakeFailure(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "quic", Domain: "quic.example"},
-		QUIC: []model.QUICObservation{
-			{SNI: "quic.example", Success: false, Error: "timeout: no recent network activity"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerQUIC, Data: model.QUICObservation{SNI: "quic.example", Success: false, Error: "timeout: no recent network activity"}},
 		},
 	}
 
@@ -128,7 +128,9 @@ func TestClassifyReportsQUICHandshakeFailure(t *testing.T) {
 func TestClassifyDoesNotTreatTracePermissionErrorAsPathQuality(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "trace", Domain: "trace.example"},
-		Trace:  &model.TraceObservation{Success: false, Error: "listen ip4:icmp 0.0.0.0: socket: operation not permitted"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerTrace, Data: model.TraceObservation{Success: false, Error: "listen ip4:icmp 0.0.0.0: socket: operation not permitted"}},
+		},
 	}
 
 	findings := classifier.Classify(result)

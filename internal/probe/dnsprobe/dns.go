@@ -48,9 +48,13 @@ func Probe(ctx context.Context, resolver model.Resolver, domain string, qtype ui
 	}
 	// If truncated, retry over TCP with updated latency.
 	if resp.Truncated {
+		tcpStart := time.Now()
+		tcpMsg := new(mdns.Msg)
+		tcpMsg.SetQuestion(query, qtype)
+		tcpMsg.SetEdns0(1232, false)
 		tcpClient := &mdns.Client{Net: "tcp", Timeout: timeout}
-		resp, _, err = tcpClient.ExchangeContext(ctx, msg, server)
-		observation.Latency = time.Since(start)
+		resp, _, err = tcpClient.ExchangeContext(ctx, tcpMsg, server)
+		observation.Latency = time.Since(tcpStart)
 		if err == nil {
 			observation.RCode = mdns.RcodeToString[resp.Rcode]
 			observation.Success = resp.Rcode == mdns.RcodeSuccess

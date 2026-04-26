@@ -33,12 +33,12 @@ func Summary(scan model.ScanReport) string {
 			w,
 			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			target.Target.Domain,
-			statusBool(len(target.DNS), func(i int) bool { return target.DNS[i].Success }),
-			statusBool(len(target.TCP), func(i int) bool { return target.TCP[i].Success }),
-			statusBool(len(target.TLS), func(i int) bool { return target.TLS[i].Success }),
-			statusBool(len(target.QUIC), func(i int) bool { return target.QUIC[i].Success }),
-			statusBool(len(target.HTTP), func(i int) bool { return target.HTTP[i].Success }),
-			statusTrace(target.Trace),
+			statusFromResults(target.Results, model.LayerDNS),
+			statusFromResults(target.Results, model.LayerTCP),
+			statusFromResults(target.Results, model.LayerTLS),
+			statusFromResults(target.Results, model.LayerQUIC),
+			statusFromResults(target.Results, model.LayerHTTP),
+			statusFromResults(target.Results, model.LayerTrace),
 			findingTypes(target.Findings),
 		)
 	}
@@ -90,26 +90,38 @@ func categoryStatus(score float64) string {
 	}
 }
 
-func statusTrace(observation *model.TraceObservation) string {
-	if observation == nil {
-		return "skip"
-	}
-	if observation.Success {
-		return "ok"
-	}
-	return "warn"
-}
-
-func statusBool(count int, success func(int) bool) string {
-	if count == 0 {
-		return "skip"
-	}
-	for i := 0; i < count; i++ {
-		if success(i) {
+// statusFromResults determines the status string for a given layer
+// by checking all ProbeResults for that layer.
+func statusFromResults(results []model.ProbeResult, layer model.Layer) string {
+	for _, r := range results {
+		if r.Layer != layer {
+			continue
+		}
+		if hasSuccess(r.Data) {
 			return "ok"
 		}
+		return "fail"
 	}
-	return "fail"
+	return "skip"
+}
+
+// hasSuccess checks whether a probe result's Data payload indicates success.
+func hasSuccess(data any) bool {
+	switch v := data.(type) {
+	case model.DNSObservation:
+		return v.Success
+	case model.TCPObservation:
+		return v.Success
+	case model.TLSObservation:
+		return v.Success
+	case model.HTTPObservation:
+		return v.Success
+	case model.QUICObservation:
+		return v.Success
+	case model.TraceObservation:
+		return v.Success
+	}
+	return false
 }
 
 func findingTypes(findings []model.Finding) string {

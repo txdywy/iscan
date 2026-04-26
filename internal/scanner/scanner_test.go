@@ -72,3 +72,24 @@ func TestBuildScanReportSkipsCancelledTargets(t *testing.T) {
 		t.Fatal("expected positive duration")
 	}
 }
+
+func TestTargetFailureDoesNotCancelOthers(t *testing.T) {
+	report := scanner.Run(t.Context(), model.ScanOptions{
+		Timeout: 500 * time.Millisecond,
+		Retries: 1,
+		Trace:   false,
+		QUIC:    false,
+	})
+	if len(report.Targets) < 2 {
+		t.Fatalf("expected at least 2 target results, got %d -- first failure may have cancelled others", len(report.Targets))
+	}
+	for i, result := range report.Targets {
+		if result.Target.Name == "" {
+			t.Errorf("target %d has empty name -- was cancelled before scan started", i)
+		}
+	}
+	if report.Duration <= 0 {
+		t.Fatal("expected positive duration")
+	}
+	t.Logf("scanned %d targets in %v", len(report.Targets), report.Duration)
+}

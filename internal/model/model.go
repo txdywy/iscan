@@ -85,15 +85,16 @@ type ScanReport struct {
 	Warnings  []string       `json:"warnings,omitempty"`
 }
 
+type ProbeResult struct {
+	Layer Layer `json:"layer"`
+	Data  any   `json:"data"`
+}
+
 type TargetResult struct {
-	Target   Target            `json:"target"`
-	DNS      []DNSObservation  `json:"dns"`
-	TCP      []TCPObservation  `json:"tcp"`
-	TLS      []TLSObservation  `json:"tls"`
-	HTTP     []HTTPObservation `json:"http"`
-	QUIC     []QUICObservation `json:"quic,omitempty"`
-	Trace    *TraceObservation `json:"trace,omitempty"`
-	Findings []Finding         `json:"findings"`
+	Target   Target        `json:"target"`
+	Error    string        `json:"error,omitempty"`
+	Results  []ProbeResult `json:"results"`
+	Findings []Finding     `json:"findings"`
 }
 
 type DNSObservation struct {
@@ -162,10 +163,11 @@ type TraceObservation struct {
 }
 
 type TraceHop struct {
-	TTL     int           `json:"ttl"`
-	Address string        `json:"address,omitempty"`
-	RTT     time.Duration `json:"rtt,omitempty"`
-	Error   string        `json:"error,omitempty"`
+	TTL      int           `json:"ttl"`
+	Address  string        `json:"address,omitempty"`
+	RTT      time.Duration `json:"rtt,omitempty"`
+	Mismatch bool          `json:"mismatch"`
+	Error    string        `json:"error,omitempty"`
 }
 
 type Finding struct {

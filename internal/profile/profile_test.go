@@ -13,15 +13,11 @@ func TestBuildProfileComputesTiers(t *testing.T) {
 		Targets: []model.TargetResult{
 			{
 				Target: model.Target{Domain: "example.com"},
-				DNS: []model.DNSObservation{
-					{Resolver: "system", Answers: []string{"93.184.216.34"}, Success: true, Latency: 30 * time.Millisecond},
-					{Resolver: "cloudflare", Answers: []string{"93.184.216.34"}, Success: true, Latency: 25 * time.Millisecond},
-				},
-				TCP: []model.TCPObservation{
-					{Success: true, Host: "93.184.216.34", Port: 443, Latency: 50 * time.Millisecond},
-				},
-				TLS: []model.TLSObservation{
-					{Success: true, SNI: "example.com", Version: "TLS1.3", Address: "93.184.216.34:443"},
+				Results: []model.ProbeResult{
+					{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Answers: []string{"93.184.216.34"}, Success: true, Latency: 30 * time.Millisecond}},
+					{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "cloudflare", Answers: []string{"93.184.216.34"}, Success: true, Latency: 25 * time.Millisecond}},
+					{Layer: model.LayerTCP, Data: model.TCPObservation{Success: true, Host: "93.184.216.34", Port: 443, Latency: 50 * time.Millisecond}},
+					{Layer: model.LayerTLS, Data: model.TLSObservation{Success: true, SNI: "example.com", Version: "TLS1.3", Address: "93.184.216.34:443"}},
 				},
 			},
 		},
@@ -54,9 +50,9 @@ func TestBuildProfileDetectsSNIFiltering(t *testing.T) {
 		Targets: []model.TargetResult{
 			{
 				Target: model.Target{Domain: "blocked.example"},
-				TLS: []model.TLSObservation{
-					{Address: "1.2.3.4:443", SNI: "blocked.example", Success: false, Error: "reset"},
-					{Address: "1.2.3.4:443", SNI: "example.com", Success: true},
+				Results: []model.ProbeResult{
+					{Layer: model.LayerTLS, Data: model.TLSObservation{Address: "1.2.3.4:443", SNI: "blocked.example", Success: false, Error: "reset"}},
+					{Layer: model.LayerTLS, Data: model.TLSObservation{Address: "1.2.3.4:443", SNI: "example.com", Success: true}},
 				},
 			},
 		},
@@ -77,10 +73,9 @@ func TestBuildProfileDegradesOnErrors(t *testing.T) {
 		Targets: []model.TargetResult{
 			{
 				Target: model.Target{Domain: "broken.example"},
-				TCP: []model.TCPObservation{
-					{Success: false, ErrorKind: "refused", Host: "broken.example", Port: 443},
+				Results: []model.ProbeResult{
+					{Layer: model.LayerTCP, Data: model.TCPObservation{Success: false, ErrorKind: "refused", Host: "broken.example", Port: 443}},
 				},
-				TLS: []model.TLSObservation{},
 			},
 		},
 	}
