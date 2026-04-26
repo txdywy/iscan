@@ -3,9 +3,30 @@ package targets
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
 	"iscan/internal/model"
 )
+
+var customResolvers []model.Resolver
+
+// AddCustomResolvers appends user-specified resolvers to the custom resolver list.
+// These are included in BuiltinResolvers() results.
+func AddCustomResolvers(resolvers []model.Resolver) {
+	customResolvers = append(customResolvers, resolvers...)
+}
+
+// DetectTransport detects the DNS transport protocol from a server address.
+// Returns "https" for https:// prefix, "tcp-tls" for tls:// prefix, or "udp" otherwise.
+func DetectTransport(server string) string {
+	if strings.HasPrefix(server, "https://") {
+		return "https"
+	}
+	if strings.HasPrefix(server, "tls://") {
+		return "tcp-tls"
+	}
+	return "udp"
+}
 
 // TargetSource provides a list of targets to scan.
 type TargetSource interface {
@@ -93,13 +114,18 @@ func BuiltinTargets() []model.Target {
 }
 
 func BuiltinResolvers() []model.Resolver {
-	return []model.Resolver{
-		{Name: "system", System: true},
-		{Name: "cloudflare", Server: "1.1.1.1:53"},
-		{Name: "google", Server: "8.8.8.8:53"},
-		{Name: "quad9", Server: "9.9.9.9:53"},
-		{Name: "cloudflare-ipv6", Server: "[2606:4700:4700::1111]:53"},
-		{Name: "google-ipv6", Server: "[2001:4860:4860::8888]:53"},
-		{Name: "quad9-ipv6", Server: "[2620:fe::fe]:53"},
+	base := []model.Resolver{
+		{Name: "system", System: true, Transport: "system"},
+		{Name: "cloudflare", Server: "1.1.1.1:53", Transport: "udp"},
+		{Name: "google", Server: "8.8.8.8:53", Transport: "udp"},
+		{Name: "quad9", Server: "9.9.9.9:53", Transport: "udp"},
+		{Name: "cloudflare-ipv6", Server: "[2606:4700:4700::1111]:53", Transport: "udp"},
+		{Name: "google-ipv6", Server: "[2001:4860:4860::8888]:53", Transport: "udp"},
+		{Name: "quad9-ipv6", Server: "[2620:fe::fe]:53", Transport: "udp"},
+		{Name: "cloudflare-doh", Server: "1.1.1.1", Transport: "https"},
+		{Name: "google-doh", Server: "dns.google", Transport: "https"},
+		{Name: "cloudflare-dot", Server: "1.1.1.1", Transport: "tcp-tls"},
+		{Name: "google-dot", Server: "dns.google", Transport: "tcp-tls"},
 	}
+	return append(base, customResolvers...)
 }
