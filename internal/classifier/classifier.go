@@ -42,6 +42,9 @@ func Classify(result model.TargetResult) []model.Finding {
 	if f := dnsRcodeFindings(dnsObs, now); len(f) > 0 {
 		findings = append(findings, f...)
 	}
+	if f := detectTransparentDNSProxy(dnsObs, now); len(f) > 0 {
+		findings = append(findings, f...)
+	}
 	if evidence := aggregateFailures(tcpObs,
 		func(o model.TCPObservation) string { return fmt.Sprintf("%s:%d", o.Host, o.Port) },
 		func(o model.TCPObservation) bool { return o.Success },
@@ -352,4 +355,48 @@ func rcodeConfidence(rcode string) model.Confidence {
 	default:
 		return model.ConfidenceLow
 	}
+}
+
+// detectTransparentDNSProxy checks whoami query responses against known resolver IPs.
+// If a whoami.akamai.net query returns an IP different from known resolver IPs,
+// a transparent DNS proxy finding is generated.
+func detectTransparentDNSProxy(observations []model.DNSObservation, now time.Time) []model.Finding {
+	var findings []model.Finding
+	for _, obs := range observations {
+		// Only check observations that successfully resolved whoami domains
+		if !obs.Success || len(obs.Answers) == 0 {
+			continue
+		}
+		// Check if this was a whoami query (query contains whoami.)
+		if !strings.Contains(obs.Query, "whoami.") {
+			continue
+		}
+		// Compare resolved IP against known resolver server addresses
+		resolvedIP := obs.Answers[0]
+		if isKnownResolverIP(resolvedIP) {
+			continue // This is expected — whoami returns the resolver's own IP
+		}
+		// The resolved IP differs from expected — transparent proxy detected
+		findings = append(findings, model.Finding{
+			Type:       model.FindingDNSTransparentProxy,
+			Layer:      model.LayerDNS,
+			Confidence: model.ConfidenceHigh,
+			Evidence:   []string{fmt.Sprintf("whoami query via %s resolved to %s (expected resolver's own IP)", obs.Resolver, resolvedIP)},
+			ObservedAt: now,
+		})
+	}
+	return findings
+}
+
+func isKnownResolverIP(ip string) bool {
+	// Known public resolver IPs that whoami should return
+	known := map[string]bool{
+		"1.1.1.1": true, "1.0.0.1": true,                         // Cloudflare
+		"8.8.8.8": true, "8.8.4.4": true,                         // Google
+		"9.9.9.9": true, "149.112.112.112": true,                 // Quad9
+		"2606:4700:4700::1111": true, "2606:4700:4700::1001": true, // Cloudflare IPv6
+		"2001:4860:4860::8888": true, "2001:4860:4860::8844": true, // Google IPv6
+		"2620:fe::fe": true, "2620:fe::9": true,                  // Quad9 IPv6
+	}
+	return known[ip]
 }

@@ -255,6 +255,70 @@ func hasFinding(findings []model.Finding, typ model.FindingType) bool {
 	return ok
 }
 
+func TestClassifyDetectsTransparentDNSProxy(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "proxy", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{
+				Resolver: "cloudflare",
+				Query:    "whoami.akamai.net.",
+				Answers:  []string{"10.0.0.1"},
+				Success:  true,
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingDNSTransparentProxy)
+	if !ok {
+		t.Fatalf("expected dns_transparent_proxy finding for unexpected whoami response, got %#v", findings)
+	}
+	if finding.Confidence != model.ConfidenceHigh {
+		t.Fatalf("expected high confidence for transparent proxy detection, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyNoTransparentProxyForKnownResolverIP(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "normal", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{
+				Resolver: "cloudflare",
+				Query:    "whoami.akamai.net.",
+				Answers:  []string{"1.1.1.1"},
+				Success:  true,
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if hasFinding(findings, model.FindingDNSTransparentProxy) {
+		t.Fatalf("did not expect transparent proxy finding for known resolver IP, got %#v", findings)
+	}
+}
+
+func TestClassifyNoTransparentProxyForNonWhoamiQuery(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "normal", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{
+				Resolver: "system",
+				Query:    "example.com.",
+				Answers:  []string{"93.184.216.34"},
+				Success:  true,
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if hasFinding(findings, model.FindingDNSTransparentProxy) {
+		t.Fatalf("did not expect transparent proxy finding for non-whoami query, got %#v", findings)
+	}
+}
+
 func getFinding(findings []model.Finding, typ model.FindingType) (model.Finding, bool) {
 	for _, finding := range findings {
 		if finding.Type == typ {
