@@ -123,7 +123,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ### Plans
 
 - [x] 03-01-PLAN.md -- ICMP Ping Probe (Wave 1): Model types (LayerPing, PingObservation), probe + adapter in internal/probe/icmpping/, ping subcommand + --icmp-ping flag, scanner wiring
-- [ ] 03-02-PLAN.md -- Custom Target Sets (Wave 2): TargetSource interface, BuiltinSource + FileSource, ScanOptions.TargetSet, --target-set flag, scanner integration
+- [x] 03-02-PLAN.md -- Custom Target Sets (Wave 2): TargetSource interface, BuiltinSource + FileSource, ScanOptions.TargetSet, --target-set flag, scanner integration
 - [ ] 03-03-PLAN.md -- IPv6 Support (Wave 3): Target.AddressFamily, IPv6 resolvers, DNS AAAA queries, traceroute ICMPv6, adapter dual-stack wiring, CLI IPv6 validation
 
 ### Alignment
