@@ -17,7 +17,7 @@ type Adapter struct {
 
 // Run performs a single traceroute and returns a ProbeResult.
 func (a *Adapter) Run(ctx context.Context, target model.Target) model.ProbeResult {
-	obs := Probe(ctx, target.Domain, 0)
+	obs := Probe(ctx, target.Domain, target.AddressFamily, 0)
 	return probe.NewResult(model.LayerTrace, obs)
 }
 

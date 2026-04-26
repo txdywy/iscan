@@ -98,5 +98,8 @@ func BuiltinResolvers() []model.Resolver {
 		{Name: "cloudflare", Server: "1.1.1.1:53"},
 		{Name: "google", Server: "8.8.8.8:53"},
 		{Name: "quad9", Server: "9.9.9.9:53"},
+		{Name: "cloudflare-ipv6", Server: "[2606:4700:4700::1111]:53"},
+		{Name: "google-ipv6", Server: "[2001:4860:4860::8888]:53"},
+		{Name: "quad9-ipv6", Server: "[2620:fe::fe]:53"},
 	}
 }

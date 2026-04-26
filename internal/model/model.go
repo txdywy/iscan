@@ -45,6 +45,7 @@ type Target struct {
 	HTTPPath   string   `json:"http_path"`
 	CompareSNI []string `json:"compare_sni,omitempty"`
 	QUICPort   int      `json:"quic_port,omitempty"`
+	AddressFamily  string   `json:"address_family,omitempty"`
 }
 
 func (t Target) Validate() error {

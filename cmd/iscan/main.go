@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -109,6 +110,10 @@ than absolute censorship claims.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := args[0]
+			// Normalize raw IPv6 addresses (strip brackets if present)
+			if strings.HasPrefix(target, "[") && strings.HasSuffix(target, "]") {
+				target = target[1 : len(target)-1]
+			}
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			obs := icmpping.Probe(ctx, target, pingTimeout)
