@@ -140,9 +140,183 @@ func TestClassifyDoesNotTreatTracePermissionErrorAsPathQuality(t *testing.T) {
 	}
 }
 
+func TestClassifyReportsRCODE_NXDOMAIN(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "nxdomain", Domain: "nonexistent.example"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Query: "nonexistent.example.", RCode: "NXDOMAIN", Success: false}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingDNSNXDOMAIN)
+	if !ok {
+		t.Fatalf("expected dns_nxdomain finding, got %#v", findings)
+	}
+	if finding.Confidence != model.ConfidenceHigh {
+		t.Fatalf("expected high confidence for NXDOMAIN, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyReportsRCODE_SERVFAIL(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "servfail", Domain: "broken.example"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Query: "broken.example.", RCode: "SERVFAIL", Success: false}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingDNSSERVFAIL)
+	if !ok {
+		t.Fatalf("expected dns_servfail finding, got %#v", findings)
+	}
+	if finding.Confidence != model.ConfidenceMedium {
+		t.Fatalf("expected medium confidence for SERVFAIL, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyReportsRCODE_REFUSED(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "refused", Domain: "blocked.example"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "public", Query: "blocked.example.", RCode: "REFUSED", Success: false}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingDNSREFUSED)
+	if !ok {
+		t.Fatalf("expected dns_refused finding, got %#v", findings)
+	}
+	if finding.Confidence != model.ConfidenceHigh {
+		t.Fatalf("expected high confidence for REFUSED, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyReportsRCODE_Other(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "other", Domain: "error.example"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Query: "error.example.", RCode: "FORMERR", Success: false}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingDNSOtherRCODE)
+	if !ok {
+		t.Fatalf("expected dns_other_rcode finding, got %#v", findings)
+	}
+	if finding.Confidence != model.ConfidenceLow {
+		t.Fatalf("expected low confidence for other RCODE, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyNoRCODEFindingForNOERROR(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "ok", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{Resolver: "system", Query: "example.com.", RCode: "NOERROR", Success: true, Answers: []string{"93.184.216.34"}}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	for _, typ := range []model.FindingType{model.FindingDNSNXDOMAIN, model.FindingDNSSERVFAIL, model.FindingDNSREFUSED, model.FindingDNSOtherRCODE} {
+		if hasFinding(findings, typ) {
+			t.Fatalf("did not expect %s finding for NOERROR response", typ)
+		}
+	}
+}
+
+func TestClassifyCollectsDNSObservationsFromSliceData(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "slice", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: []model.DNSObservation{
+				{Resolver: "cloudflare-doh", Query: "example.com.", RCode: "NXDOMAIN", Success: false, Type: "A"},
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if !hasFinding(findings, model.FindingDNSNXDOMAIN) {
+		t.Fatalf("expected dns_nxdomain finding from slice data, got %#v", findings)
+	}
+}
+
 func hasFinding(findings []model.Finding, typ model.FindingType) bool {
 	_, ok := getFinding(findings, typ)
 	return ok
+}
+
+func TestClassifyDetectsTransparentDNSProxy(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "proxy", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{
+				Resolver: "cloudflare",
+				Query:    "whoami.akamai.net.",
+				Answers:  []string{"10.0.0.1"},
+				Success:  true,
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingDNSTransparentProxy)
+	if !ok {
+		t.Fatalf("expected dns_transparent_proxy finding for unexpected whoami response, got %#v", findings)
+	}
+	if finding.Confidence != model.ConfidenceHigh {
+		t.Fatalf("expected high confidence for transparent proxy detection, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyNoTransparentProxyForKnownResolverIP(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "normal", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{
+				Resolver: "cloudflare",
+				Query:    "whoami.akamai.net.",
+				Answers:  []string{"1.1.1.1"},
+				Success:  true,
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if hasFinding(findings, model.FindingDNSTransparentProxy) {
+		t.Fatalf("did not expect transparent proxy finding for known resolver IP, got %#v", findings)
+	}
+}
+
+func TestClassifyNoTransparentProxyForNonWhoamiQuery(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "normal", Domain: "example.com"},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerDNS, Data: model.DNSObservation{
+				Resolver: "system",
+				Query:    "example.com.",
+				Answers:  []string{"93.184.216.34"},
+				Success:  true,
+			}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if hasFinding(findings, model.FindingDNSTransparentProxy) {
+		t.Fatalf("did not expect transparent proxy finding for non-whoami query, got %#v", findings)
+	}
 }
 
 func getFinding(findings []model.Finding, typ model.FindingType) (model.Finding, bool) {

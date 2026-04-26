@@ -14,7 +14,7 @@ func Classify(result model.TargetResult) []model.Finding {
 	now := time.Now()
 	var findings []model.Finding
 
-	dnsObs := collectObservations[model.DNSObservation](result.Results, model.LayerDNS)
+	dnsObs := collectAllDNSObservations(result.Results)
 	tcpObs := collectObservations[model.TCPObservation](result.Results, model.LayerTCP)
 	tlsObs := collectObservations[model.TLSObservation](result.Results, model.LayerTLS)
 	httpObs := collectObservations[model.HTTPObservation](result.Results, model.LayerHTTP)
@@ -38,6 +38,12 @@ func Classify(result model.TargetResult) []model.Finding {
 			Evidence:   evidence,
 			ObservedAt: now,
 		})
+	}
+	if f := dnsRcodeFindings(dnsObs, now); len(f) > 0 {
+		findings = append(findings, f...)
+	}
+	if f := detectTransparentDNSProxy(dnsObs, now); len(f) > 0 {
+		findings = append(findings, f...)
 	}
 	if evidence := aggregateFailures(tcpObs,
 		func(o model.TCPObservation) string { return fmt.Sprintf("%s:%d", o.Host, o.Port) },
@@ -284,4 +290,113 @@ func collectObservation[T any](results []model.ProbeResult, layer model.Layer) *
 		}
 	}
 	return nil
+}
+
+// collectAllDNSObservations extracts DNS observations from ProbeResult data, handling both
+// single DNSObservation (backward compatible) and []DNSObservation (multi-resolver adapter).
+func collectAllDNSObservations(results []model.ProbeResult) []model.DNSObservation {
+	var out []model.DNSObservation
+	for _, r := range results {
+		if r.Layer != model.LayerDNS {
+			continue
+		}
+		// New format: []DNSObservation from multi-resolver adapter
+		if obsSlice, ok := r.Data.([]model.DNSObservation); ok {
+			out = append(out, obsSlice...)
+			continue
+		}
+		// Old format: single DNSObservation (backward compatible)
+		if obs, ok := r.Data.(model.DNSObservation); ok {
+			out = append(out, obs)
+		}
+	}
+	return out
+}
+
+// dnsRcodeFindings generates findings for non-NOERROR DNS response codes.
+func dnsRcodeFindings(observations []model.DNSObservation, now time.Time) []model.Finding {
+	var findings []model.Finding
+	for _, obs := range observations {
+		if obs.RCode == "" || obs.RCode == "NOERROR" {
+			continue
+		}
+		findings = append(findings, model.Finding{
+			Type:       rcodeFindingType(obs.RCode),
+			Layer:      model.LayerDNS,
+			Confidence: rcodeConfidence(obs.RCode),
+			Evidence:   []string{fmt.Sprintf("%s returned %s for %s", obs.Resolver, obs.RCode, obs.Query)},
+			ObservedAt: now,
+		})
+	}
+	return findings
+}
+
+func rcodeFindingType(rcode string) model.FindingType {
+	switch rcode {
+	case "NXDOMAIN":
+		return model.FindingDNSNXDOMAIN
+	case "SERVFAIL":
+		return model.FindingDNSSERVFAIL
+	case "REFUSED":
+		return model.FindingDNSREFUSED
+	default:
+		return model.FindingDNSOtherRCODE
+	}
+}
+
+func rcodeConfidence(rcode string) model.Confidence {
+	switch rcode {
+	case "NXDOMAIN":
+		return model.ConfidenceHigh
+	case "SERVFAIL":
+		return model.ConfidenceMedium
+	case "REFUSED":
+		return model.ConfidenceHigh
+	default:
+		return model.ConfidenceLow
+	}
+}
+
+// detectTransparentDNSProxy checks whoami query responses against known resolver IPs.
+// If a whoami.akamai.net query returns an IP different from known resolver IPs,
+// a transparent DNS proxy finding is generated.
+func detectTransparentDNSProxy(observations []model.DNSObservation, now time.Time) []model.Finding {
+	var findings []model.Finding
+	for _, obs := range observations {
+		// Only check observations that successfully resolved whoami domains
+		if !obs.Success || len(obs.Answers) == 0 {
+			continue
+		}
+		// Check if this was a whoami query (query contains whoami.)
+		if !strings.Contains(obs.Query, "whoami.") {
+			continue
+		}
+		// Compare resolved IP against known resolver server addresses
+		resolvedIP := obs.Answers[0]
+		if isKnownResolverIP(resolvedIP) {
+			continue // This is expected — whoami returns the resolver's own IP
+		}
+		// The resolved IP differs from expected — transparent proxy detected
+		findings = append(findings, model.Finding{
+			Type:       model.FindingDNSTransparentProxy,
+			Layer:      model.LayerDNS,
+			Confidence: model.ConfidenceHigh,
+			Evidence:   []string{fmt.Sprintf("whoami query via %s resolved to %s (expected resolver's own IP)", obs.Resolver, resolvedIP)},
+			ObservedAt: now,
+		})
+	}
+	return findings
+}
+
+func isKnownResolverIP(ip string) bool {
+	// Known public resolver IPs that whoami should return
+	known := map[string]bool{
+		"1.1.1.1": true, "1.0.0.1": true,                         // Cloudflare
+		"8.8.8.8": true, "8.8.4.4": true,                         // Google
+		"9.9.9.9": true, "149.112.112.112": true,                 // Quad9
+		"2606:4700:4700::1111": true, "2606:4700:4700::1001": true, // Cloudflare IPv6
+		"2001:4860:4860::8888": true, "2001:4860:4860::8844": true, // Google IPv6
+		"2620:fe::fe": true, "2620:fe::9": true,                  // Quad9 IPv6
+	}
+	return known[ip]
 }

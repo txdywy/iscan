@@ -160,7 +160,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 04-01-PLAN.md -- Model + Resolver Types Foundation (Wave 1): Add Resolver.Transport, FindingType constants, ScanOptions.DNSRateLimit/CustomResolvers, builtin DoH/DoT resolvers, DetectTransport
+- [x] 04-01-PLAN.md -- Model + Resolver Types Foundation (Wave 1): Add Resolver.Transport, FindingType constants, ScanOptions.DNSRateLimit/CustomResolvers, builtin DoH/DoT resolvers, DetectTransport
 - [ ] 04-02-PLAN.md -- DNS Probe Transport Architecture (Wave 2): Refactor Probe() to transport dispatcher, add dohQuery (HTTP POST + DNS wire format), dotQuery (miekg/dns tcp-tls), systemResolverQuery (net.DefaultResolver)
 - [ ] 04-03-PLAN.md -- Rate Limiter + Multi-Resolver Adapter (Wave 3): Per-resolver token bucket rate limiter (20 qps default), adapter multi-resolver iteration with rate limiting, []DNSObservation data
 - [ ] 04-04-PLAN.md -- Classifier RCODE + Transparent Proxy (Wave 2): Per-RCODE findings (NXDOMAIN/HIGH, SERVFAIL/MEDIUM, REFUSED/HIGH), collectAllDNSObservations, transparent DNS proxy detection
