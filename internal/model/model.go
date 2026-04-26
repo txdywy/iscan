@@ -11,6 +11,7 @@ const (
 	LayerHTTP  Layer = "http"
 	LayerQUIC  Layer = "quic"
 	LayerTrace Layer = "trace"
+	LayerPing  Layer = "ping"
 )
 
 type Confidence string
@@ -74,6 +75,7 @@ type ScanOptions struct {
 	Trace       bool          `json:"trace"`
 	QUIC        bool          `json:"quic"`
 	Parallelism int           `json:"parallelism"`
+	ICMPPing    bool          `json:"icmp_ping,omitempty"`
 }
 
 type ScanReport struct {
@@ -168,6 +170,16 @@ type TraceHop struct {
 	RTT      time.Duration `json:"rtt,omitempty"`
 	Mismatch bool          `json:"mismatch"`
 	Error    string        `json:"error,omitempty"`
+}
+
+type PingObservation struct {
+	Target  string        `json:"target"`
+	Address string        `json:"address,omitempty"`
+	RTT     time.Duration `json:"rtt,omitempty"`
+	TTL     int           `json:"ttl,omitempty"`
+	Latency time.Duration `json:"latency"`
+	Success bool          `json:"success"`
+	Error   string        `json:"error,omitempty"`
 }
 
 type Finding struct {
