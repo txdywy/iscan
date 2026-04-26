@@ -12,7 +12,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 1: Critical Bug Fixes
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** Eliminate all documented data-corruption, timeout-propagation, and cancellation-cascade bugs so the tool produces correct results and always terminates within bounds.
 **Dependencies:** None (brownfield — existing codebase)
 **Delivery criteria:**
@@ -37,11 +37,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-01: Traceroute ICMP ID collision fix (P0)
 - F-02: DNS TCP fallback EDNS0 preservation (P0)
@@ -54,7 +56,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 2: Probe Interface Unification
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** All probes implement a single `Probe` interface with `ProbeResult` type-erased containers, middleware decorators for retry/timeout/logging, and `init()`-based registration. The scanner becomes a phase-driven executor that no longer needs per-probe callsites.
 **Dependencies:** Phase 1 (bug fixes stable before refactoring)
 **Delivery criteria:**
@@ -78,11 +80,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-06: Unified `Probe` interface with `ProbeResult` type-erased container (P1)
 - F-07: Middleware wrappers for retry, timeout, logging (P1)
@@ -95,7 +99,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 3: Missing Table Stakes
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** Users can run ICMP ping as an independent reachability check, use custom target sets from a JSON file, and scan IPv6 targets across all applicable probes.
 **Dependencies:** Phase 2 (new probes use unified interface; scanner declartive)
 **Delivery criteria:**
@@ -118,11 +122,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-10: ICMP Ping probe (P1)
 - F-11: Custom target sets via `--target-set` (P1)
@@ -134,7 +140,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 4: DNS Enhancements
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** DNS probing produces richer diagnostic signal with RCODE-specific findings, encrypted transport options (DoH, DoT), system resolver RCODE extraction, and per-resolver rate limiting.
 **Dependencies:** Phase 2 (new DNS transports use unified interface); independent of Phase 3
 **Delivery criteria:**
@@ -156,11 +162,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-05: DNS RCODEs surfaced separately — NXDOMAIN, SERVFAIL, REFUSED (P0)
 - F-13: DoH and DoT probe support via miekg/dns (P1)
@@ -172,7 +180,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 5: Classification and Profile Improvements
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** Classification produces evidence-weighted, composable findings. Profile computation separates control targets from diagnostic targets, enabling accurate cross-target correlation.
 **Dependencies:** Phase 3 (IPv6 findngs) and Phase 4 (RCODE-specific findings produce richer input for classifiers)
 **Delivery criteria:**
@@ -194,11 +202,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-09: Control vs diagnostic target separation in profile (P1)
 - F-15: Dynamic confidence scoring — evidence-weighted (P2)
@@ -211,7 +221,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 6: Report Format Extensibility
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** Reports use a `Formatter` interface with registry so new output formats can be added without touching report internals. HTML self-contained report and CSV/YAML exports ship alongside existing JSON/tabwriter output. A `--format` flag replaces `--json` / `--summary`.
 **Dependencies:** Phase 2 (formatter interface mirrors probe interface pattern); can proceed in parallel with Phases 4-5
 **Delivery criteria:**
@@ -234,11 +244,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-14: Self-contained HTML report with color-coded protocol status table (P1)
 - F-18: CSV and YAML report export (P2)
@@ -250,7 +262,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 7: Advanced Probes
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** Users can probe WebSocket endpoints for WS/WSS connectivity and test SOCKS5/HTTP CONNECT proxy reachability — addressing niche but differentiating diagnostic scenarios that no competitor CLI covers.
 **Dependencies:** Phase 2 (new probes register via unified interface)
 **Delivery criteria:**
@@ -269,11 +281,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-19: WebSocket (WS/WSS) handshake probe (P2)
 - F-20: SOCKS/HTTP proxy protocol probe (P2)
@@ -285,7 +299,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 ## Phase 8: Analysis and Comparison
 
 **Status:** planned
-**Plans:** 3 plans
+**Plans:** 5 plans
 **Goal:** Users can compare two scan results to identify changes over time and track historical trends with stored scan snapshots.
 **Dependencies:** Phase 6 (stable report output for comparison rendering); Phase 5 (consistent findings for diff)
 **Delivery criteria:**
@@ -307,11 +321,13 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ### Plans
 
-- [ ] 01-01-PLAN.md -- Fix ICMP identifier collision in traceroute (F-01): crypto/rand ID, inner ICMP validation with Mismatch flag, per-hop timeout isolation, concurrent trace test
-- [ ] 01-02-PLAN.md -- Fix errgroup cascading cancellation (F-04): per-target context.WithCancel, error collection in TargetResult.Error
-- [ ] 01-03-PLAN.md -- Fix DNS EDNS0/TCP/latency + QUIC double-timeout + context deadline propagation (F-02, F-03, N-07)
+- [ ] 02-01-PLAN.md -- Probe Interface & Unified Model (Wave 1): Define Probe interface, ProbeFunc adapter, Registry map, ProbeResult type-erased container, replace TargetResult named slices with Results []ProbeResult
+- [ ] 02-02-PLAN.md -- Middleware Decorators (Wave 2): Create composable middleware (Timeout, Retry, Logging, Chain) in internal/probe/middleware/
+- [ ] 02-03-PLAN.md -- Probe Adapters & Registration (Wave 2): Create adapter.go in all 6 probe packages with Opts + Adapter + init() registration via probe.Registry
+- [ ] 02-04-PLAN.md -- Scanner Declarative Execution (Wave 3): Refactor scanner to build []Probe from Registry, apply middleware, iterate declaratively, remove old helpers
+- [ ] 02-05-PLAN.md -- Consumer Migration (Wave 4): Migrate classifier/profile/report to collectObservations[T] helpers, update all tests, verify go test ./... passes
 
-### Alignment with Requirements
+### Alignment
 
 - F-21: Scan comparison/diff mode (P2)
 - F-22: Long-term trend tracking (P2)
