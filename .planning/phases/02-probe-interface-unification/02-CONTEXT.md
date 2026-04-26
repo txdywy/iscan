@@ -38,7 +38,7 @@ Refactor all 6 existing probes (DNS, TCP, TLS, HTTP, QUIC, traceroute) to implem
 
 ### Migration Path
 - **D-12:** Big bang refactoring — all changes in one phase execution. This is feasible because: (a) all changes are internal to `internal/` packages, (b) no external API change, (c) existing tests serve as regression checks, (d) the codebase is moderate size (~2000 lines across all probes + scanner).
-- **D-13:** Old standalone probe functions (`dnsprobe.Probe`, `tcp.Probe`, etc.) are replaced by the new interface. They are not kept as helpers — the one-shot migration removes them entirely. The scanner and all consumers switch to the interface at once.
+- **D-13:** Old standalone probe functions (`dnsprobe.Probe`, `tcp.Probe`, etc.) become internal implementation details called only by their adapter's `Run()` method. The adapter wraps the existing logic rather than duplicating it, keeping the implementation unchanged while exposing it through the unified `Probe` interface. External consumers (scanner, classifier, profile, report) only interact through `Probe.Run()`. The original probe functions are NOT exposed to consumers.
 
 ### Claude's Discretion
 - Derivation of opts structs for each probe (field names, defaults)
