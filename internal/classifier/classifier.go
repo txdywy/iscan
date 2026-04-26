@@ -14,7 +14,7 @@ func Classify(result model.TargetResult) []model.Finding {
 	now := time.Now()
 	var findings []model.Finding
 
-	dnsObs := collectObservations[model.DNSObservation](result.Results, model.LayerDNS)
+	dnsObs := collectAllDNSObservations(result.Results)
 	tcpObs := collectObservations[model.TCPObservation](result.Results, model.LayerTCP)
 	tlsObs := collectObservations[model.TLSObservation](result.Results, model.LayerTLS)
 	httpObs := collectObservations[model.HTTPObservation](result.Results, model.LayerHTTP)
@@ -38,6 +38,9 @@ func Classify(result model.TargetResult) []model.Finding {
 			Evidence:   evidence,
 			ObservedAt: now,
 		})
+	}
+	if f := dnsRcodeFindings(dnsObs, now); len(f) > 0 {
+		findings = append(findings, f...)
 	}
 	if evidence := aggregateFailures(tcpObs,
 		func(o model.TCPObservation) string { return fmt.Sprintf("%s:%d", o.Host, o.Port) },
@@ -284,4 +287,69 @@ func collectObservation[T any](results []model.ProbeResult, layer model.Layer) *
 		}
 	}
 	return nil
+}
+
+// collectAllDNSObservations extracts DNS observations from ProbeResult data, handling both
+// single DNSObservation (backward compatible) and []DNSObservation (multi-resolver adapter).
+func collectAllDNSObservations(results []model.ProbeResult) []model.DNSObservation {
+	var out []model.DNSObservation
+	for _, r := range results {
+		if r.Layer != model.LayerDNS {
+			continue
+		}
+		// New format: []DNSObservation from multi-resolver adapter
+		if obsSlice, ok := r.Data.([]model.DNSObservation); ok {
+			out = append(out, obsSlice...)
+			continue
+		}
+		// Old format: single DNSObservation (backward compatible)
+		if obs, ok := r.Data.(model.DNSObservation); ok {
+			out = append(out, obs)
+		}
+	}
+	return out
+}
+
+// dnsRcodeFindings generates findings for non-NOERROR DNS response codes.
+func dnsRcodeFindings(observations []model.DNSObservation, now time.Time) []model.Finding {
+	var findings []model.Finding
+	for _, obs := range observations {
+		if obs.RCode == "" || obs.RCode == "NOERROR" {
+			continue
+		}
+		findings = append(findings, model.Finding{
+			Type:       rcodeFindingType(obs.RCode),
+			Layer:      model.LayerDNS,
+			Confidence: rcodeConfidence(obs.RCode),
+			Evidence:   []string{fmt.Sprintf("%s returned %s for %s", obs.Resolver, obs.RCode, obs.Query)},
+			ObservedAt: now,
+		})
+	}
+	return findings
+}
+
+func rcodeFindingType(rcode string) model.FindingType {
+	switch rcode {
+	case "NXDOMAIN":
+		return model.FindingDNSNXDOMAIN
+	case "SERVFAIL":
+		return model.FindingDNSSERVFAIL
+	case "REFUSED":
+		return model.FindingDNSREFUSED
+	default:
+		return model.FindingDNSOtherRCODE
+	}
+}
+
+func rcodeConfidence(rcode string) model.Confidence {
+	switch rcode {
+	case "NXDOMAIN":
+		return model.ConfidenceHigh
+	case "SERVFAIL":
+		return model.ConfidenceMedium
+	case "REFUSED":
+		return model.ConfidenceHigh
+	default:
+		return model.ConfidenceLow
+	}
 }
