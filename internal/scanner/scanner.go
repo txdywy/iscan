@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	_ "iscan/internal/probe/dnsprobe"
+	"iscan/internal/probe/dnsprobe"
 	_ "iscan/internal/probe/httpprobe"
 	_ "iscan/internal/probe/quicprobe"
 	_ "iscan/internal/probe/tcp"
@@ -33,6 +33,13 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 	if options.Parallelism <= 0 {
 		options.Parallelism = 4
 	}
+
+	// Configure DNS rate limiter, defaulting to 20 qps
+	rateLimit := options.DNSRateLimit
+	if rateLimit == 0 {
+		rateLimit = 20
+	}
+	dnsprobe.SetRateLimit(rateLimit)
 
 	start := time.Now()
 	report := model.ScanReport{
