@@ -76,6 +76,7 @@ type ScanOptions struct {
 	QUIC        bool          `json:"quic"`
 	Parallelism int           `json:"parallelism"`
 	ICMPPing    bool          `json:"icmp_ping,omitempty"`
+	TargetSet   string        `json:"target_set,omitempty"`
 }
 
 type ScanReport struct {

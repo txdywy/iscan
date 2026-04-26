@@ -93,3 +93,15 @@ func TestTargetFailureDoesNotCancelOthers(t *testing.T) {
 	}
 	t.Logf("scanned %d targets in %v", len(report.Targets), report.Duration)
 }
+
+func TestRunAcceptsCustomTargetSet(t *testing.T) {
+	report := scanner.Run(t.Context(), model.ScanOptions{
+		Timeout:   100 * time.Millisecond,
+		Retries:   1,
+		TargetSet: "builtin",
+	})
+	if len(report.Targets) == 0 {
+		t.Fatal("expected at least one target result with builtin target set")
+	}
+}
+
