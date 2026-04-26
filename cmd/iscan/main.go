@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -35,6 +37,10 @@ func rootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "iscan",
 		Short: "Layered network diagnostics",
+		Long: `iscan runs DNS, TCP, TLS, HTTP, and optional traceroute probes
+against a built-in target set, then emits a terminal summary and a
+structured JSON report. Findings are evidence-backed signals rather
+than absolute censorship claims.`,
 	}
 	scanCmd := &cobra.Command{
 		Use:   "scan",
@@ -43,7 +49,9 @@ func rootCommand() *cobra.Command {
 			if targetSet != "builtin" {
 				return fmt.Errorf("unsupported target set %q", targetSet)
 			}
-			scan := scanner.Run(context.Background(), model.ScanOptions{
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+			scan := scanner.Run(ctx, model.ScanOptions{
 				Timeout: timeout,
 				Retries: retries,
 				Trace:   trace,
@@ -58,17 +66,17 @@ func rootCommand() *cobra.Command {
 				rec = &r
 			}
 			if jsonPath != "" {
-				var bytes []byte
+				var b []byte
 				var err error
 				if analyze {
-					bytes, err = report.JSONExtended(scan, prof, rec)
+					b, err = report.JSONExtended(scan, prof, rec)
 				} else {
-					bytes, err = report.JSON(scan)
+					b, err = report.JSON(scan)
 				}
 				if err != nil {
 					return err
 				}
-				if err := os.WriteFile(jsonPath, append(bytes, '\n'), 0o644); err != nil {
+				if err := os.WriteFile(jsonPath, append(b, '\n'), 0o644); err != nil {
 					return err
 				}
 			}
@@ -86,7 +94,7 @@ func rootCommand() *cobra.Command {
 	scanCmd.Flags().BoolVar(&summary, "summary", true, "print terminal summary")
 	scanCmd.Flags().DurationVar(&timeout, "timeout", 5*time.Second, "per-probe timeout")
 	scanCmd.Flags().IntVar(&retries, "retries", 3, "retry count recorded in report")
-	scanCmd.Flags().BoolVar(&trace, "trace", true, "enable privileged ICMP trace probe")
+	scanCmd.Flags().BoolVar(&trace, "trace", false, "enable privileged ICMP trace probe")
 	scanCmd.Flags().BoolVar(&quic, "quic", false, "probe QUIC/UDP handshake on targets with quic_port")
 	scanCmd.Flags().StringVar(&targetSet, "target-set", "builtin", "target set to scan")
 	scanCmd.Flags().BoolVar(&analyze, "analyze", false, "include network profile and protocol rankings")

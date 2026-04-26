@@ -1,9 +1,7 @@
 package profile
 
 import (
-	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"iscan/internal/model"
@@ -23,6 +21,7 @@ type Profile struct {
 	DNSHealth        DNSHealth  `json:"dns_health"`
 	TCPHealth        TCPHealth  `json:"tcp_health"`
 	TLSHealth        TLSHealth  `json:"tls_health"`
+	QUICHealth       QUICHealth `json:"quic_health"`
 	PathHealth       PathHealth `json:"path_health"`
 	OverallStability float64    `json:"overall_stability"`
 }
@@ -41,16 +40,16 @@ type DNSHealth struct {
 }
 
 type TCPHealth struct {
-	SuccessRate float64          `json:"success_rate"`
-	AvgLatency  time.Duration    `json:"avg_latency"`
-	ErrorModes  map[string]int   `json:"error_modes"`
-	Tier        QualityTier      `json:"tier"`
+	SuccessRate float64        `json:"success_rate"`
+	AvgLatency  time.Duration  `json:"avg_latency"`
+	ErrorModes  map[string]int `json:"error_modes"`
+	Tier        QualityTier    `json:"tier"`
 }
 
 type TLSHealth struct {
-	SuccessRate     float64    `json:"success_rate"`
-	HasSNIFiltering bool       `json:"has_sni_filtering"`
-	Versions        []string   `json:"versions"`
+	SuccessRate     float64     `json:"success_rate"`
+	HasSNIFiltering bool        `json:"has_sni_filtering"`
+	Versions        []string    `json:"versions"`
 	Tier            QualityTier `json:"tier"`
 }
 
@@ -63,22 +62,30 @@ type PathHealth struct {
 	Tier           QualityTier   `json:"tier"`
 }
 
+type QUICHealth struct {
+	SuccessRate float64     `json:"success_rate"`
+	Tier        QualityTier `json:"tier"`
+}
+
 func BuildProfile(report model.ScanReport) Profile {
 	p := Profile{
-		ISP:         extractISP(report),
-		DNSHealth:   profileDNS(report),
-		TCPHealth:   profileTCP(report),
-		TLSHealth:   profileTLS(report),
-		PathHealth:  profilePath(report),
+		ISP:        extractISP(report),
+		DNSHealth:  profileDNS(report),
+		TCPHealth:  profileTCP(report),
+		TLSHealth:  profileTLS(report),
+		QUICHealth: profileQUIC(report),
+		PathHealth: profilePath(report),
 	}
-	p.OverallStability = ((stabilityScore(p.DNSHealth.Tier) +
-		stabilityScore(p.TCPHealth.Tier) +
-		stabilityScore(p.TLSHealth.Tier) +
-		stabilityScore(p.PathHealth.Tier)) / 4.0)
+	p.OverallStability = ((StabilityScore(p.DNSHealth.Tier) +
+		StabilityScore(p.TCPHealth.Tier) +
+		StabilityScore(p.TLSHealth.Tier) +
+		StabilityScore(p.QUICHealth.Tier) +
+		StabilityScore(p.PathHealth.Tier)) / 5.0)
 	return p
 }
 
-func stabilityScore(tier QualityTier) float64 {
+// StabilityScore maps a quality tier to a numeric stability score.
+func StabilityScore(tier QualityTier) float64 {
 	switch tier {
 	case QualityExcellent:
 		return 1.0
@@ -147,6 +154,9 @@ func profileDNS(report model.ScanReport) DNSHealth {
 	}
 	if h.SuspiciousAnswers > 0 {
 		score -= 0.4
+	}
+	if h.AvgLatency > 200*time.Millisecond {
+		score -= 0.15
 	}
 	if score < 0 {
 		score = 0
@@ -217,17 +227,14 @@ func profileTLS(report model.ScanReport) TLSHealth {
 
 func profilePath(report model.ScanReport) PathHealth {
 	h := PathHealth{}
-	traceAvailable := false
 	var rtts []float64
 	for _, target := range report.Targets {
 		if target.Trace == nil {
 			continue
 		}
 		h.TraceAvailable = true
-		traceAvailable = true
-		if isLocalTraceProblem(target.Trace.Error) {
+		if model.IsLocalPermissionError(target.Trace.Error) {
 			h.TraceAvailable = false
-			traceAvailable = false
 			continue
 		}
 		if target.Trace.Success {
@@ -250,15 +257,21 @@ func profilePath(report model.ScanReport) PathHealth {
 		}
 		mean := sum / float64(len(rtts))
 		h.AvgRTT = time.Duration(mean)
-		var variance float64
-		for _, r := range rtts {
+		// Use median absolute deviation (MAD) for jitter instead of
+		// standard deviation to be robust against outlier hops.
+		devs := make([]float64, len(rtts))
+		for i, r := range rtts {
 			d := r - mean
-			variance += d * d
+			if d < 0 {
+				d = -d
+			}
+			devs[i] = d
 		}
-		variance /= float64(len(rtts))
-		h.Jitter = time.Duration(math.Sqrt(variance))
+		sort.Float64s(devs)
+		medianDev := devs[len(devs)/2]
+		h.Jitter = time.Duration(medianDev)
 	}
-	if !traceAvailable {
+	if !h.TraceAvailable {
 		h.Tier = QualityFair
 		return h
 	}
@@ -279,9 +292,25 @@ func profilePath(report model.ScanReport) PathHealth {
 	return h
 }
 
-func isLocalTraceProblem(errMsg string) bool {
-	lower := strings.ToLower(errMsg)
-	return strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "permission denied")
+func profileQUIC(report model.ScanReport) QUICHealth {
+	h := QUICHealth{}
+	var successes, total int
+	for _, target := range report.Targets {
+		for _, obs := range target.QUIC {
+			total++
+			if obs.Success {
+				successes++
+			}
+		}
+	}
+	if total == 0 {
+		// QUIC not probed — treat as neutral (no information = no problem).
+		h.Tier = QualityExcellent
+		return h
+	}
+	h.SuccessRate = float64(successes) / float64(total)
+	h.Tier = qualityTier(h.SuccessRate)
+	return h
 }
 
 func hasFinding(report model.ScanReport, typ model.FindingType) bool {

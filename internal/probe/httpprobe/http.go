@@ -3,6 +3,7 @@ package httpprobe
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net/http"
 	"net/http/httptrace"
 	"time"
@@ -17,10 +18,21 @@ func Probe(ctx context.Context, url string, timeout time.Duration) model.HTTPObs
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	var connectStart, tlsStart, requestStart time.Time
 	trace := &httptrace.ClientTrace{
+		DNSStart: func(_ httptrace.DNSStartInfo) {
+			connectStart = time.Now()
+		},
+		DNSDone: func(_ httptrace.DNSDoneInfo) {
+			if !connectStart.IsZero() {
+				observation.DNSStartLatency = time.Since(connectStart)
+			}
+		},
 		ConnectStart: func(_, _ string) {
 			connectStart = time.Now()
 		},
@@ -54,8 +66,11 @@ func Probe(ctx context.Context, url string, timeout time.Duration) model.HTTPObs
 		observation.Error = err.Error()
 		return observation
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	observation.StatusCode = resp.StatusCode
-	observation.Success = resp.StatusCode >= 200 && resp.StatusCode < 500
+	observation.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 	return observation
 }

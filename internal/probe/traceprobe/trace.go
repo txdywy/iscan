@@ -22,7 +22,6 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 	ips, err := net.LookupIP(target)
 	if err != nil {
 		observation.Error = err.Error()
-		observation.Latency = time.Since(start)
 		return observation
 	}
 	var ip net.IP
@@ -34,14 +33,12 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 	}
 	if ip == nil {
 		observation.Error = "no IPv4 address for trace"
-		observation.Latency = time.Since(start)
 		return observation
 	}
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
 		observation.Error = err.Error()
-		observation.Latency = time.Since(start)
 		return observation
 	}
 	defer conn.Close()
@@ -57,7 +54,6 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 		}
 		if err := packetConn.SetTTL(ttl); err != nil {
 			observation.Error = err.Error()
-			observation.Latency = time.Since(start)
 			return observation
 		}
 		hop, done := probeHop(conn, ip, ttl, timeout)

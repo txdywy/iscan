@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 	"net/url"
-	"strings"
+	"sort"
 	"time"
 
 	mdns "github.com/miekg/dns"
@@ -14,9 +14,9 @@ import (
 	"iscan/internal/model"
 	"iscan/internal/probe/dnsprobe"
 	"iscan/internal/probe/httpprobe"
+	"iscan/internal/probe/quicprobe"
 	"iscan/internal/probe/tcp"
 	"iscan/internal/probe/tlsprobe"
-	"iscan/internal/probe/quicprobe"
 	"iscan/internal/probe/traceprobe"
 	"iscan/internal/targets"
 )
@@ -28,6 +28,9 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 	if options.Retries <= 0 {
 		options.Retries = 3
 	}
+	if options.Parallelism <= 0 {
+		options.Parallelism = 4
+	}
 
 	start := time.Now()
 	report := model.ScanReport{
@@ -36,10 +39,15 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 	}
 	resolvers := targets.BuiltinResolvers()
 	targetList := targets.BuiltinTargets()
+	for _, target := range targetList {
+		if err := target.Validate(); err != nil {
+			report.Warnings = append(report.Warnings, err.Error())
+		}
+	}
 	results := make([]model.TargetResult, len(targetList))
 
 	group, gCtx := errgroup.WithContext(ctx)
-	group.SetLimit(4)
+	group.SetLimit(options.Parallelism)
 	for i, target := range targetList {
 		i, target := i, target
 		group.Go(func() error {
@@ -58,7 +66,10 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 		report.Warnings = append(report.Warnings, err.Error())
 	}
 	for i, result := range results {
-		if result.Trace != nil && result.Trace.Error != "" && isLocalTraceError(result.Trace.Error) {
+		if result.Target.Name == "" {
+			continue // target was cancelled before scan started
+		}
+		if result.Trace != nil && result.Trace.Error != "" && model.IsLocalPermissionError(result.Trace.Error) {
 			report.Warnings = append(report.Warnings, targetList[i].Domain+": trace unavailable: "+result.Trace.Error)
 		}
 		report.Findings = append(report.Findings, result.Findings...)
@@ -71,11 +82,14 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 func scanTarget(ctx context.Context, target model.Target, resolvers []model.Resolver, options model.ScanOptions) model.TargetResult {
 	result := model.TargetResult{Target: target}
 	for _, resolver := range resolvers {
+		if ctx.Err() != nil {
+			return result
+		}
 		result.DNS = append(result.DNS, probeDNS(ctx, resolver, target.Domain, mdns.TypeA, options.Timeout))
 		result.DNS = append(result.DNS, probeDNS(ctx, resolver, target.Domain, mdns.TypeAAAA, options.Timeout))
 	}
 
-	addresses := uniqueAnswers(result.DNS)
+	addresses := UniqueAnswers(result.DNS)
 	if len(addresses) == 0 {
 		addresses = []string{target.Domain}
 	}
@@ -92,7 +106,7 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 	}
 
 	for _, observation := range result.TCP {
-		if !observation.Success || observation.Port != 443 {
+		if !observation.Success {
 			continue
 		}
 		probeTLSWithRetries(ctx, &result, observation.Host, observation.Port, target.Domain, options)
@@ -101,9 +115,9 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 		}
 	}
 
-	if target.Scheme == "http" || hasSuccessfulTLS(result.TLS) {
+	if target.Scheme == "http" || HasSuccessfulTLSForSNI(result.TLS, target.Domain) {
 		for attempt := 0; attempt < options.Retries; attempt++ {
-			observation := httpprobe.Probe(ctx, targetURL(target), options.Timeout)
+			observation := httpprobe.Probe(ctx, TargetURL(target), options.Timeout)
 			result.HTTP = append(result.HTTP, observation)
 			if observation.Success {
 				break
@@ -111,13 +125,24 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 		}
 	}
 	if options.QUIC && target.QUICPort > 0 {
-			quicPort := target.QUICPort
-			for _, address := range addresses {
+		quicPort := target.QUICPort
+		for _, address := range addresses {
+			if ctx.Err() != nil {
+				break
+			}
+			for attempt := 0; attempt < options.Retries; attempt++ {
+				observation := quicprobe.Probe(ctx, address, quicPort, target.Domain, []string{"h3"}, options.Timeout)
+				result.QUIC = append(result.QUIC, observation)
+				if observation.Success {
+					break
+				}
+			}
+			for _, compareSNI := range target.CompareSNI {
 				if ctx.Err() != nil {
 					break
 				}
 				for attempt := 0; attempt < options.Retries; attempt++ {
-					observation := quicprobe.Probe(ctx, address, quicPort, target.Domain, []string{"h3"}, options.Timeout)
+					observation := quicprobe.Probe(ctx, address, quicPort, compareSNI, []string{"h3"}, options.Timeout)
 					result.QUIC = append(result.QUIC, observation)
 					if observation.Success {
 						break
@@ -125,7 +150,8 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 				}
 			}
 		}
-		if options.Trace {
+	}
+	if options.Trace {
 		trace := traceprobe.Probe(ctx, target.Domain, options.Timeout)
 		result.Trace = &trace
 	}
@@ -152,7 +178,11 @@ func probeDNS(ctx context.Context, resolver model.Resolver, domain string, qtype
 		Query:    domain,
 		Type:     mdns.TypeToString[qtype],
 	}
-	ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip", domain)
+	network := "ip4"
+	if qtype == mdns.TypeAAAA {
+		network = "ip6"
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, network, domain)
 	observation.Latency = time.Since(start)
 	if err != nil {
 		observation.Error = err.Error()
@@ -171,7 +201,7 @@ func probeDNS(ctx context.Context, resolver model.Resolver, domain string, qtype
 	return observation
 }
 
-func uniqueAnswers(observations []model.DNSObservation) []string {
+func UniqueAnswers(observations []model.DNSObservation) []string {
 	seen := map[string]struct{}{}
 	var answers []string
 	for _, observation := range observations {
@@ -183,27 +213,23 @@ func uniqueAnswers(observations []model.DNSObservation) []string {
 			answers = append(answers, answer)
 		}
 	}
+	sort.Strings(answers)
 	return answers
 }
 
-func hasSuccessfulTLS(observations []model.TLSObservation) bool {
+func HasSuccessfulTLSForSNI(observations []model.TLSObservation, sni string) bool {
 	for _, observation := range observations {
-		if observation.Success {
+		if observation.Success && observation.SNI == sni {
 			return true
 		}
 	}
 	return false
 }
 
-func targetURL(target model.Target) string {
+func TargetURL(target model.Target) string {
 	path := target.HTTPPath
 	if path == "" {
 		path = "/"
 	}
 	return (&url.URL{Scheme: target.Scheme, Host: target.Domain, Path: path}).String()
-}
-
-func isLocalTraceError(message string) bool {
-	lower := strings.ToLower(message)
-	return strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "permission denied")
 }

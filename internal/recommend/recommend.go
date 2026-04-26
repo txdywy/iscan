@@ -10,6 +10,28 @@ import (
 	"iscan/internal/profile"
 )
 
+// Weight constants for each recommendation category.
+const (
+	weightLongTCP     = 0.30
+	weightLongTLS     = 0.25
+	weightLongPath    = 0.25
+	weightLongSNIFree = 0.20
+
+	weightUDPDNS     = 0.25
+	weightUDPPath    = 0.35
+	weightUDPJitter  = 0.25
+	weightUDPSNIFree = 0.15
+
+	weightConservativeTCP       = 0.30
+	weightConservativeTLSSNIPen = 0.30
+	weightConservativePath      = 0.20
+	weightConservativeStability = 0.20
+
+	weightRedundantConnectivity = 0.45
+	weightRedundantInstability  = 0.30
+	weightRedundantPath         = 0.25
+)
+
 type Recommendation struct {
 	Rankings []Ranking       `json:"rankings"`
 	Profile  profile.Profile `json:"profile"`
@@ -33,10 +55,10 @@ func Rank(report model.ScanReport, prof profile.Profile) Recommendation {
 		Category: "长连接型 (long-lived TCP)",
 		Score: weighted(
 			[][2]float64{
-				{0.30, tcp.SuccessRate},
-				{0.25, tierScore(tls.Tier)},
-				{0.25, tierScore(path.Tier)},
-				{0.20, invertBool(tls.HasSNIFiltering)},
+				{weightLongTCP, tcp.SuccessRate},
+				{weightLongTLS, profile.StabilityScore(tls.Tier)},
+				{weightLongPath, profile.StabilityScore(path.Tier)},
+				{weightLongSNIFree, invertBool(tls.HasSNIFiltering)},
 			}),
 		Reasons: reasonsLong(tcp, tls, path),
 	}
@@ -45,10 +67,10 @@ func Rank(report model.ScanReport, prof profile.Profile) Recommendation {
 		Category: "UDP友好型 (UDP-friendly)",
 		Score: weighted(
 			[][2]float64{
-				{0.25, dnsGood(dns)},
-				{0.35, tierScore(path.Tier)},
-				{0.25, lowJitterScore(path.Jitter)},
-				{0.15, invertBool(tls.HasSNIFiltering)},
+				{weightUDPDNS, dnsGood(dns)},
+				{weightUDPPath, profile.StabilityScore(path.Tier)},
+				{weightUDPJitter, lowJitterScore(path.Jitter)},
+				{weightUDPSNIFree, invertBool(tls.HasSNIFiltering)},
 			}),
 		Reasons: reasonsUDP(dns, path),
 	}
@@ -57,10 +79,10 @@ func Rank(report model.ScanReport, prof profile.Profile) Recommendation {
 		Category: "保守TCP/TLS型 (conservative TCP/TLS)",
 		Score: weighted(
 			[][2]float64{
-				{0.30, tcp.SuccessRate},
-				{0.30, tierScore(tls.Tier) * (1 - sniPenalty(tls))},
-				{0.20, tierScore(path.Tier)},
-				{0.20, prof.OverallStability},
+				{weightConservativeTCP, tcp.SuccessRate},
+				{weightConservativeTLSSNIPen, profile.StabilityScore(tls.Tier) * (1 - sniPenalty(tls))},
+				{weightConservativePath, profile.StabilityScore(path.Tier)},
+				{weightConservativeStability, prof.OverallStability},
 			}),
 		Reasons: reasonsConservative(tcp, tls, prof),
 	}
@@ -69,17 +91,20 @@ func Rank(report model.ScanReport, prof profile.Profile) Recommendation {
 		Category: "高重试鲁棒型 (high-redundancy retry)",
 		Score: weighted(
 			[][2]float64{
-				{0.45, anyConnectivity(tcp, tls)},
-				{0.30, 1.0 - prof.OverallStability},
-				{0.25, tierScore(path.Tier)},
+				{weightRedundantConnectivity, anyConnectivity(tcp, tls)},
+				{weightRedundantInstability, 1.0 - prof.OverallStability},
+				{weightRedundantPath, profile.StabilityScore(path.Tier)},
 			}),
 		Reasons: reasonsRedundant(tcp, tls, path),
 	}
 
-	r.Rankings = []Ranking{long, udp, conservative, redundant}
-	sort.Slice(r.Rankings, func(i, j int) bool {
-		return r.Rankings[i].Score > r.Rankings[j].Score
+	// Primary rankings sorted by descending score.
+	primary := []Ranking{long, udp, conservative}
+	sort.Slice(primary, func(i, j int) bool {
+		return primary[i].Score > primary[j].Score
 	})
+	// Redundant is always appended as a fallback strategy regardless of score.
+	r.Rankings = append(primary, redundant)
 	return r
 }
 
@@ -89,21 +114,6 @@ func weighted(pairs [][2]float64) float64 {
 		sum += p[0] * p[1]
 	}
 	return math.Round(sum*100) / 100
-}
-
-func tierScore(t profile.QualityTier) float64 {
-	switch t {
-	case profile.QualityExcellent:
-		return 1.0
-	case profile.QualityGood:
-		return 0.75
-	case profile.QualityFair:
-		return 0.45
-	case profile.QualityPoor:
-		return 0.15
-	default:
-		return 0
-	}
 }
 
 func invertBool(b bool) float64 {

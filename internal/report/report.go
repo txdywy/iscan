@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"text/tabwriter"
 
 	"iscan/internal/model"
 	"iscan/internal/profile"
@@ -16,92 +17,78 @@ func JSON(scan model.ScanReport) ([]byte, error) {
 
 func JSONExtended(scan model.ScanReport, prof *profile.Profile, rec *recommend.Recommendation) ([]byte, error) {
 	out := struct {
-		Scan           model.ScanReport             `json:"scan"`
-		Profile        *profile.Profile             `json:"profile,omitempty"`
-		Recommendation *recommend.Recommendation     `json:"recommendation,omitempty"`
+		Scan           model.ScanReport          `json:"scan"`
+		Profile        *profile.Profile          `json:"profile,omitempty"`
+		Recommendation *recommend.Recommendation `json:"recommendation,omitempty"`
 	}{Scan: scan, Profile: prof, Recommendation: rec}
 	return json.MarshalIndent(out, "", "  ")
 }
 
 func Summary(scan model.ScanReport) string {
-	var builder strings.Builder
-	builder.WriteString("TARGET\tDNS\tTCP\tTLS\tQUIC\tHTTP\tTRACE\tFINDINGS\n")
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "TARGET\tDNS\tTCP\tTLS\tQUIC\tHTTP\tTRACE\tFINDINGS")
 	for _, target := range scan.Targets {
 		fmt.Fprintf(
-			&builder,
+			w,
 			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			target.Target.Domain,
-			statusDNS(target.DNS),
-			statusTCP(target.TCP),
-			statusTLS(target.TLS),
-			statusQUIC(target.QUIC),
-			statusHTTP(target.HTTP),
+			statusBool(len(target.DNS), func(i int) bool { return target.DNS[i].Success }),
+			statusBool(len(target.TCP), func(i int) bool { return target.TCP[i].Success }),
+			statusBool(len(target.TLS), func(i int) bool { return target.TLS[i].Success }),
+			statusBool(len(target.QUIC), func(i int) bool { return target.QUIC[i].Success }),
+			statusBool(len(target.HTTP), func(i int) bool { return target.HTTP[i].Success }),
 			statusTrace(target.Trace),
 			findingTypes(target.Findings),
 		)
 	}
+	w.Flush()
 	for _, warning := range scan.Warnings {
-		fmt.Fprintf(&builder, "warning: %s\n", warning)
+		fmt.Fprintf(&b, "warning: %s\n", warning)
 	}
-	return builder.String()
+	return b.String()
 }
 
 func SummaryExtended(scan model.ScanReport, rec *recommend.Recommendation) string {
-	builder := SummaryBuilder{}
-	builder.WriteString(Summary(scan))
+	var b strings.Builder
+	b.WriteString(Summary(scan))
 	if rec != nil {
-		builder.WriteString("\nPROTOCOL RANKINGS\n")
-		for _, r := range rec.Rankings {
-			fmt.Fprintf(&builder, "  %s  score:%.2f  %s\n", icon(r.Score), r.Score, r.Category)
+		b.WriteString("\nPROTOCOL RANKINGS\n")
+		for i, r := range rec.Rankings {
+			icon := asciiIcon(r.Score)
+			// Mark the fallback strategy distinctly.
+			if i == len(rec.Rankings)-1 && r.Category == "高重试鲁棒型 (high-redundancy retry)" {
+				icon = "[F]"
+			}
+			fmt.Fprintf(&b, "  %s %s  score:%.2f  %s\n", icon, categoryStatus(r.Score), r.Score, r.Category)
 			for _, reason := range r.Reasons {
-				fmt.Fprintf(&builder, "    %s\n", reason)
+				fmt.Fprintf(&b, "    %s\n", reason)
 			}
 		}
 	}
-	return builder.String()
+	return b.String()
 }
 
-func icon(score float64) string {
+func asciiIcon(score float64) string {
 	switch {
 	case score >= 0.7:
-		return "●"
+		return "[+]"
 	case score >= 0.4:
-		return "◑"
+		return "[~]"
 	default:
-		return "○"
+		return "[ ]"
 	}
 }
 
-type SummaryBuilder struct {
-	strings.Builder
-}
-
-func statusDNS(observations []model.DNSObservation) string {
-	if len(observations) == 0 {
-		return "skip"
+func categoryStatus(score float64) string {
+	switch {
+	case score >= 0.7:
+		return "good"
+	case score >= 0.4:
+		return "fair"
+	default:
+		return "poor"
 	}
-	for _, observation := range observations {
-		if observation.Success {
-			return "ok"
-		}
-	}
-	return "fail"
-}
-
-func statusTCP(observations []model.TCPObservation) string {
-	return statusBool(len(observations), func(i int) bool { return observations[i].Success })
-}
-
-func statusQUIC(observations []model.QUICObservation) string {
-	return statusBool(len(observations), func(i int) bool { return observations[i].Success })
-}
-
-func statusTLS(observations []model.TLSObservation) string {
-	return statusBool(len(observations), func(i int) bool { return observations[i].Success })
-}
-
-func statusHTTP(observations []model.HTTPObservation) string {
-	return statusBool(len(observations), func(i int) bool { return observations[i].Success })
 }
 
 func statusTrace(observation *model.TraceObservation) string {

@@ -8,7 +8,7 @@ import (
 	"iscan/internal/recommend"
 )
 
-func TestRankProducesFourCategoriesSorted(t *testing.T) {
+func TestRankProducesPrimaryCategoriesSorted(t *testing.T) {
 	prof := profile.Profile{
 		TCPHealth: profile.TCPHealth{
 			SuccessRate: 0.9,
@@ -35,12 +35,18 @@ func TestRankProducesFourCategoriesSorted(t *testing.T) {
 	if len(result.Rankings) != 4 {
 		t.Fatalf("expected 4 rankings, got %d", len(result.Rankings))
 	}
-	for i := 1; i < len(result.Rankings); i++ {
-		if result.Rankings[i-1].Score < result.Rankings[i].Score {
-			t.Fatalf("rankings not sorted descending: %s (%.2f) < %s (%.2f)",
-				result.Rankings[i-1].Category, result.Rankings[i-1].Score,
-				result.Rankings[i].Category, result.Rankings[i].Score)
+	// The last ranking is always the fallback (high-redundancy retry).
+	primary := result.Rankings[:3]
+	for i := 1; i < len(primary); i++ {
+		if primary[i-1].Score < primary[i].Score {
+			t.Fatalf("primary rankings not sorted descending: %s (%.2f) < %s (%.2f)",
+				primary[i-1].Category, primary[i-1].Score,
+				primary[i].Category, primary[i].Score)
 		}
+	}
+	fallback := result.Rankings[3]
+	if fallback.Category != "高重试鲁棒型 (high-redundancy retry)" {
+		t.Fatalf("expected fallback as last ranking, got %s", fallback.Category)
 	}
 	for _, r := range result.Rankings {
 		if r.Category == "" {
@@ -70,6 +76,7 @@ func TestRankWithSNIFilteringPrefersConservative(t *testing.T) {
 		PathHealth: profile.PathHealth{
 			Reachable: true,
 			Tier:      profile.QualityFair,
+			Jitter:    150000000, // 150ms — lowers UDP-friendly score enough for conservative to win
 		},
 		OverallStability: 0.5,
 	}
@@ -77,6 +84,9 @@ func TestRankWithSNIFilteringPrefersConservative(t *testing.T) {
 	result := recommend.Rank(model.ScanReport{}, prof)
 	top := result.Rankings[0]
 
+	if top.Category != "保守TCP/TLS型 (conservative TCP/TLS)" {
+		t.Fatalf("expected conservative to rank first when SNI filtering detected, got %s", top.Category)
+	}
 	if top.Score <= 0 {
 		t.Fatalf("expected non-zero top score: %#v", top)
 	}

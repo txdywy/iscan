@@ -5,11 +5,13 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"time"
 
 	"iscan/internal/model"
 )
 
 func Classify(result model.TargetResult) []model.Finding {
+	now := time.Now()
 	var findings []model.Finding
 	if dnsInconsistent(result.DNS) {
 		findings = append(findings, model.Finding{
@@ -17,6 +19,7 @@ func Classify(result model.TargetResult) []model.Finding {
 			Layer:      model.LayerDNS,
 			Confidence: model.ConfidenceLow,
 			Evidence:   []string{"resolver answer sets differ"},
+			ObservedAt: now,
 		})
 	}
 	if evidence := suspiciousDNS(result.DNS); len(evidence) > 0 {
@@ -25,22 +28,35 @@ func Classify(result model.TargetResult) []model.Finding {
 			Layer:      model.LayerDNS,
 			Confidence: model.ConfidenceMedium,
 			Evidence:   evidence,
+			ObservedAt: now,
 		})
 	}
-	if evidence := tcpFailures(result.TCP); len(evidence) > 0 {
+	if evidence := aggregateFailures(result.TCP,
+		func(o model.TCPObservation) string { return fmt.Sprintf("%s:%d", o.Host, o.Port) },
+		func(o model.TCPObservation) bool { return o.Success },
+		func(o model.TCPObservation) string {
+			return fmt.Sprintf("%s:%d failed: %s", o.Host, o.Port, o.ErrorKind)
+		},
+	); len(evidence) > 0 {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingTCPConnectFailure,
 			Layer:      model.LayerTCP,
 			Confidence: model.ConfidenceLow,
 			Evidence:   evidence,
+			ObservedAt: now,
 		})
 	}
-	if evidence := tlsFailures(result.TLS); len(evidence) > 0 {
+	if evidence := aggregateFailures(result.TLS,
+		func(o model.TLSObservation) string { return o.Address + "|" + o.SNI },
+		func(o model.TLSObservation) bool { return o.Success },
+		func(o model.TLSObservation) string { return fmt.Sprintf("%s failed: %s", o.SNI, o.Error) },
+	); len(evidence) > 0 {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingTLSHandshakeFailure,
 			Layer:      model.LayerTLS,
 			Confidence: model.ConfidenceLow,
 			Evidence:   evidence,
+			ObservedAt: now,
 		})
 	}
 	if evidence := sniCorrelatedFailures(result.TLS); len(evidence) > 0 {
@@ -49,33 +65,80 @@ func Classify(result model.TargetResult) []model.Finding {
 			Layer:      model.LayerTLS,
 			Confidence: model.ConfidenceMedium,
 			Evidence:   evidence,
+			ObservedAt: now,
 		})
 	}
-	if evidence := httpFailures(result.HTTP); len(evidence) > 0 {
+	if evidence := aggregateFailures(result.HTTP,
+		func(o model.HTTPObservation) string { return o.URL },
+		func(o model.HTTPObservation) bool { return o.Success },
+		func(o model.HTTPObservation) string {
+			if o.Error != "" {
+				return fmt.Sprintf("%s failed: %s", o.URL, o.Error)
+			}
+			return fmt.Sprintf("%s returned status %d", o.URL, o.StatusCode)
+		},
+	); len(evidence) > 0 {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingHTTPFailure,
 			Layer:      model.LayerHTTP,
 			Confidence: model.ConfidenceLow,
 			Evidence:   evidence,
+			ObservedAt: now,
 		})
 	}
-	if evidence := quicFailures(result.QUIC); len(evidence) > 0 {
+	if evidence := aggregateFailures(result.QUIC,
+		func(o model.QUICObservation) string { return o.Address + "|" + o.SNI },
+		func(o model.QUICObservation) bool { return o.Success },
+		func(o model.QUICObservation) string { return fmt.Sprintf("%s failed: %s", o.SNI, o.Error) },
+	); len(evidence) > 0 {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingQUICFailure,
 			Layer:      model.LayerQUIC,
 			Confidence: model.ConfidenceLow,
 			Evidence:   evidence,
+			ObservedAt: now,
 		})
 	}
-	if result.Trace != nil && !result.Trace.Success && !isLocalTraceError(result.Trace.Error) {
+	if result.Trace != nil && !result.Trace.Success && !model.IsLocalPermissionError(result.Trace.Error) {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingPathQuality,
 			Layer:      model.LayerTrace,
 			Confidence: model.ConfidenceLow,
 			Evidence:   []string{result.Trace.Error},
+			ObservedAt: now,
 		})
 	}
 	return findings
+}
+
+func aggregateFailures[T any](observations []T, keyFn func(T) string, successFn func(T) bool, msgFn func(T) string) []string {
+	type state struct {
+		success bool
+		last    T
+	}
+	byKey := map[string]state{}
+	for _, observation := range observations {
+		key := keyFn(observation)
+		current := byKey[key]
+		if successFn(observation) {
+			current.success = true
+		}
+		current.last = observation
+		byKey[key] = current
+	}
+	keys := make([]string, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var evidence []string
+	for _, key := range keys {
+		current := byKey[key]
+		if !current.success {
+			evidence = append(evidence, msgFn(current.last))
+		}
+	}
+	return evidence
 }
 
 func dnsInconsistent(observations []model.DNSObservation) bool {
@@ -96,7 +159,34 @@ func dnsInconsistent(observations []model.DNSObservation) bool {
 		setsByType[qtype][strings.Join(answers, ",")] = struct{}{}
 	}
 	for _, sets := range setsByType {
-		if len(sets) > 1 {
+		if len(sets) <= 1 {
+			continue
+		}
+		// Multiple answer sets for the same query type.
+		// Only flag as inconsistent if the sets have no overlap
+		// (i.e. no resolver returned any IP that another resolver
+		// also returned). This avoids false positives for GeoDNS.
+		if !setsHaveIntersection(sets) {
+			return true
+		}
+	}
+	return false
+}
+
+func setsHaveIntersection(sets map[string]struct{}) bool {
+	if len(sets) <= 1 {
+		return true
+	}
+	// Build a global set of all IPs seen.
+	global := map[string]int{}
+	for joined := range sets {
+		for _, ip := range strings.Split(joined, ",") {
+			global[ip]++
+		}
+	}
+	// If any IP appears in more than one set, there is overlap.
+	for _, count := range global {
+		if count > 1 {
 			return true
 		}
 	}
@@ -123,54 +213,6 @@ func suspiciousDNS(observations []model.DNSObservation) []string {
 	return evidence
 }
 
-func tcpFailures(observations []model.TCPObservation) []string {
-	type state struct {
-		success bool
-		last    model.TCPObservation
-	}
-	byEndpoint := map[string]state{}
-	for _, observation := range observations {
-		key := fmt.Sprintf("%s:%d", observation.Host, observation.Port)
-		current := byEndpoint[key]
-		if observation.Success {
-			current.success = true
-		}
-		current.last = observation
-		byEndpoint[key] = current
-	}
-	var evidence []string
-	for key, current := range byEndpoint {
-		if !current.success {
-			evidence = append(evidence, fmt.Sprintf("%s failed: %s", key, current.last.ErrorKind))
-		}
-	}
-	return evidence
-}
-
-func tlsFailures(observations []model.TLSObservation) []string {
-	type state struct {
-		success bool
-		last    model.TLSObservation
-	}
-	byEndpoint := map[string]state{}
-	for _, observation := range observations {
-		key := observation.Address + "|" + observation.SNI
-		current := byEndpoint[key]
-		if observation.Success {
-			current.success = true
-		}
-		current.last = observation
-		byEndpoint[key] = current
-	}
-	var evidence []string
-	for _, current := range byEndpoint {
-		if !current.success {
-			evidence = append(evidence, fmt.Sprintf("%s failed: %s", current.last.SNI, current.last.Error))
-		}
-	}
-	return evidence
-}
-
 func sniCorrelatedFailures(observations []model.TLSObservation) []string {
 	type state struct {
 		success []string
@@ -192,8 +234,14 @@ func sniCorrelatedFailures(observations []model.TLSObservation) []string {
 			current.failed = append(current.failed, observation.SNI)
 		}
 	}
+	addresses := make([]string, 0, len(byAddress))
+	for addr := range byAddress {
+		addresses = append(addresses, addr)
+	}
+	sort.Strings(addresses)
 	var evidence []string
-	for address, current := range byAddress {
+	for _, address := range addresses {
+		current := byAddress[address]
 		if len(current.success) > 0 && len(current.failed) > 0 {
 			evidence = append(evidence, fmt.Sprintf("%s succeeded for SNI %s but failed for SNI %s", address, strings.Join(current.success, ","), strings.Join(current.failed, ",")))
 		}
@@ -201,63 +249,6 @@ func sniCorrelatedFailures(observations []model.TLSObservation) []string {
 	return evidence
 }
 
-func httpFailures(observations []model.HTTPObservation) []string {
-	type state struct {
-		success bool
-		last    model.HTTPObservation
-	}
-	byURL := map[string]state{}
-	for _, observation := range observations {
-		current := byURL[observation.URL]
-		if observation.Success {
-			current.success = true
-		}
-		current.last = observation
-		byURL[observation.URL] = current
-	}
-	var evidence []string
-	for url, current := range byURL {
-		if current.success {
-			continue
-		}
-		if current.last.Error != "" {
-			evidence = append(evidence, fmt.Sprintf("%s failed: %s", url, current.last.Error))
-			continue
-		}
-		evidence = append(evidence, fmt.Sprintf("%s returned status %d", url, current.last.StatusCode))
-	}
-	return evidence
-}
-
 func isSuspiciousIP(ip net.IP) bool {
 	return ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
-}
-
-func quicFailures(observations []model.QUICObservation) []string {
-	type state struct {
-		success bool
-		last    model.QUICObservation
-	}
-	byEndpoint := map[string]state{}
-	for _, observation := range observations {
-		key := observation.Address + "|" + observation.SNI
-		current := byEndpoint[key]
-		if observation.Success {
-			current.success = true
-		}
-		current.last = observation
-		byEndpoint[key] = current
-	}
-	var evidence []string
-	for _, current := range byEndpoint {
-		if !current.success {
-			evidence = append(evidence, fmt.Sprintf("%s failed: %s", current.last.SNI, current.last.Error))
-		}
-	}
-	return evidence
-}
-
-func isLocalTraceError(message string) bool {
-	lower := strings.ToLower(message)
-	return strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "permission denied")
 }

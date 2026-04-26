@@ -31,6 +31,15 @@ func BuiltinTargets() []model.Target {
 			CompareSNI: []string{"example.com"},
 			QUICPort:   443,
 		},
+		{
+			Name:     "no-quic-control",
+			Domain:   "example.net",
+			Scheme:   "https",
+			Ports:    []int{443},
+			Control:  true,
+			HTTPPath: "/",
+			QUICPort: 0, // explicitly disabled QUIC for control comparison
+		},
 	}
 }
 
@@ -39,5 +48,6 @@ func BuiltinResolvers() []model.Resolver {
 		{Name: "system", System: true},
 		{Name: "cloudflare", Server: "1.1.1.1:53"},
 		{Name: "google", Server: "8.8.8.8:53"},
+		{Name: "quad9", Server: "9.9.9.9:53"},
 	}
 }

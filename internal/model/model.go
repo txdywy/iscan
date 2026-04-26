@@ -46,6 +46,22 @@ type Target struct {
 	QUICPort   int      `json:"quic_port,omitempty"`
 }
 
+func (t Target) Validate() error {
+	if t.Name == "" {
+		return ErrTargetNameRequired
+	}
+	if t.Domain == "" {
+		return ErrTargetDomainRequired
+	}
+	if t.Scheme != "http" && t.Scheme != "https" {
+		return ErrTargetSchemeInvalid
+	}
+	if len(t.Ports) == 0 {
+		return ErrTargetPortsRequired
+	}
+	return nil
+}
+
 type Resolver struct {
 	Name   string `json:"name"`
 	Server string `json:"server"`
@@ -53,10 +69,11 @@ type Resolver struct {
 }
 
 type ScanOptions struct {
-	Timeout time.Duration `json:"timeout"`
-	Retries int           `json:"retries"`
-	Trace   bool          `json:"trace"`
-	QUIC    bool          `json:"quic"`
+	Timeout     time.Duration `json:"timeout"`
+	Retries     int           `json:"retries"`
+	Trace       bool          `json:"trace"`
+	QUIC        bool          `json:"quic"`
+	Parallelism int           `json:"parallelism"`
 }
 
 type ScanReport struct {
@@ -129,6 +146,7 @@ type QUICObservation struct {
 	SNI        string        `json:"sni"`
 	Version    string        `json:"version,omitempty"`
 	ALPN       string        `json:"alpn,omitempty"`
+	CertSHA256 string        `json:"cert_sha256,omitempty"`
 	Latency    time.Duration `json:"latency"`
 	Success    bool          `json:"success"`
 	Error      string        `json:"error,omitempty"`
@@ -154,4 +172,5 @@ type Finding struct {
 	Layer      Layer       `json:"layer"`
 	Confidence Confidence  `json:"confidence"`
 	Evidence   []string    `json:"evidence"`
+	ObservedAt time.Time   `json:"observed_at"`
 }

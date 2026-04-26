@@ -2,13 +2,15 @@ package quicprobe
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"strconv"
 	"time"
 
-	"iscan/internal/model"
-
 	"github.com/quic-go/quic-go"
+
+	"iscan/internal/model"
 )
 
 func Probe(ctx context.Context, host string, port int, sni string, alpn []string, timeout time.Duration) model.QUICObservation {
@@ -24,7 +26,7 @@ func Probe(ctx context.Context, host string, port int, sni string, alpn []string
 		InsecureSkipVerify: true,
 	}
 	quicConf := &quic.Config{
-		MaxIdleTimeout:      timeout,
+		MaxIdleTimeout:       timeout,
 		HandshakeIdleTimeout: timeout,
 	}
 
@@ -49,6 +51,10 @@ func Probe(ctx context.Context, host string, port int, sni string, alpn []string
 		ALPN:    state.NegotiatedProtocol,
 		Latency: latency,
 		Success: true,
+	}
+	if len(state.PeerCertificates) > 0 {
+		sum := sha256.Sum256(state.PeerCertificates[0].Raw)
+		observation.CertSHA256 = hex.EncodeToString(sum[:])
 	}
 	return observation
 }
