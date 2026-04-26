@@ -10,11 +10,12 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 
 	"iscan/internal/model"
 )
 
-func Probe(ctx context.Context, target string, timeout time.Duration) (observation model.TraceObservation) {
+func Probe(ctx context.Context, target string, addressFamily string, timeout time.Duration) (observation model.TraceObservation) {
 	start := time.Now()
 	observation = model.TraceObservation{Target: target}
 	defer func() {
@@ -26,18 +27,41 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 		return observation
 	}
 	var ip net.IP
+	// Select IP based on AddressFamily preference.
 	for _, candidate := range ips {
-		if candidate.To4() != nil {
+		if addressFamily == "ipv6" && candidate.To4() == nil {
+			ip = candidate
+			break
+		}
+		if addressFamily == "ipv4" && candidate.To4() != nil {
 			ip = candidate
 			break
 		}
 	}
 	if ip == nil {
-		observation.Error = "no IPv4 address for trace"
+		// Fallback for empty AddressFamily: prefer IPv4, then any.
+		for _, candidate := range ips {
+			if candidate.To4() != nil {
+				ip = candidate
+				break
+			}
+		}
+		if ip == nil && len(ips) > 0 {
+			ip = ips[0] // IPv6 fallback
+		}
+	}
+	if ip == nil {
+		observation.Error = "no IP address for trace"
 		return observation
 	}
+	isIPv4 := ip.To4() != nil
 
-	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+	var conn *icmp.PacketConn
+	if isIPv4 {
+		conn, err = icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+	} else {
+		conn, err = icmp.ListenPacket("ip6:icmp", "::")
+	}
 	if err != nil {
 		observation.Error = err.Error()
 		return observation
@@ -45,7 +69,13 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 	defer func() {
 		_ = conn.Close()
 	}()
-	packetConn := ipv4.NewPacketConn(conn)
+	var packetConn4 *ipv4.PacketConn
+	var packetConn6 *ipv6.PacketConn
+	if isIPv4 {
+		packetConn4 = ipv4.NewPacketConn(conn)
+	} else {
+		packetConn6 = ipv6.NewPacketConn(conn)
+	}
 
 	var idBytes [2]byte
 	if _, err := rand.Read(idBytes[:]); err != nil {
@@ -62,11 +92,17 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 			return observation
 		default:
 		}
-		if err := packetConn.SetTTL(ttl); err != nil {
-			observation.Error = err.Error()
+		var setErr error
+		if isIPv4 {
+			setErr = packetConn4.SetTTL(ttl)
+		} else {
+			setErr = packetConn6.SetHopLimit(ttl)
+		}
+		if setErr != nil {
+			observation.Error = setErr.Error()
 			return observation
 		}
-		hop, done := ProbeHop(ctx, conn, ip, ttl, timeout, probeID)
+		hop, done := ProbeHop(ctx, conn, ip, ttl, timeout, probeID, isIPv4)
 		observation.Hops = append(observation.Hops, hop)
 		if !done && isReadTimeout(hop.Error) {
 			consecutiveEmpty++
@@ -88,7 +124,7 @@ func isReadTimeout(errStr string) bool {
 	return strings.Contains(strings.ToLower(errStr), "timeout")
 }
 
-func ProbeHop(ctx context.Context, conn *icmp.PacketConn, ip net.IP, ttl int, timeout time.Duration, probeID int) (model.TraceHop, bool) {
+func ProbeHop(ctx context.Context, conn *icmp.PacketConn, ip net.IP, ttl int, timeout time.Duration, probeID int, isIPv4 bool) (model.TraceHop, bool) {
 	select {
 	case <-ctx.Done():
 		return model.TraceHop{TTL: ttl, Error: ctx.Err().Error()}, false
@@ -98,8 +134,14 @@ func ProbeHop(ctx context.Context, conn *icmp.PacketConn, ip net.IP, ttl int, ti
 	if timeout > 2*time.Second {
 		timeout = 2 * time.Second
 	}
+	var msgType icmp.Type
+	if isIPv4 {
+		msgType = ipv4.ICMPTypeEcho
+	} else {
+		msgType = ipv6.ICMPTypeEchoRequest
+	}
 	message := icmp.Message{
-		Type: ipv4.ICMPTypeEcho,
+		Type: msgType,
 		Code: 0,
 		Body: &icmp.Echo{
 			ID:   probeID,
@@ -125,7 +167,11 @@ func ProbeHop(ctx context.Context, conn *icmp.PacketConn, ip net.IP, ttl int, ti
 		}
 		return model.TraceHop{TTL: ttl, Error: err.Error()}, false
 	}
-	parsed, err := icmp.ParseMessage(1, reply[:n])
+	proto := 1 // ICMP for IPv4
+	if !isIPv4 {
+		proto = 58 // ICMPv6 for IPv6
+	}
+	parsed, err := icmp.ParseMessage(proto, reply[:n])
 	if err != nil {
 		return model.TraceHop{TTL: ttl, Address: peer.String(), Error: err.Error()}, false
 	}
@@ -160,5 +206,10 @@ func ProbeHop(ctx context.Context, conn *icmp.PacketConn, ip net.IP, ttl int, ti
 		TTL:     ttl,
 		Address: peer.String(),
 		RTT:     time.Since(sent),
-	}, parsed.Type == ipv4.ICMPTypeEchoReply
+	}, func() bool {
+		if isIPv4 {
+			return parsed.Type == ipv4.ICMPTypeEchoReply
+		}
+		return parsed.Type == ipv6.ICMPTypeEchoReply
+	}()
 }

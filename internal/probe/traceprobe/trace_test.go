@@ -81,7 +81,7 @@ func TestProbeHopTimeExceededMismatchedID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	hop, done := traceprobe.ProbeHop(ctx, conn, net.ParseIP("127.0.0.1"), ttl, time.Second, probeID)
+	hop, done := traceprobe.ProbeHop(ctx, conn, net.ParseIP("127.0.0.1"), ttl, time.Second, probeID, true)
 
 	if done {
 		// We received an EchoReply instead of our crafted TimeExceeded
@@ -123,7 +123,7 @@ func TestProbeHopTimeExceededMatchingID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	hop, done := traceprobe.ProbeHop(ctx, conn, net.ParseIP("127.0.0.1"), ttl, time.Second, probeID)
+	hop, done := traceprobe.ProbeHop(ctx, conn, net.ParseIP("127.0.0.1"), ttl, time.Second, probeID, true)
 
 	if done {
 		t.Logf("got EchoReply (skipping Mismatch assertion); hop RTT=%v", hop.RTT)
@@ -172,7 +172,7 @@ func TestProbeGeneratesUniqueIDs(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			results[idx] = traceprobe.Probe(ctx, "127.0.0.1", time.Second)
+			results[idx] = traceprobe.Probe(ctx, "127.0.0.1", "", time.Second)
 		}(i)
 	}
 	wg.Wait()
@@ -207,7 +207,7 @@ func TestConcurrentTracerouteNoCrossContamination(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			results[idx] = traceprobe.Probe(ctx, "127.0.0.1", 2*time.Second)
+			results[idx] = traceprobe.Probe(ctx, "127.0.0.1", "", 2*time.Second)
 		}(i)
 	}
 	wg.Wait()
