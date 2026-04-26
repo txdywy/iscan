@@ -9,6 +9,7 @@ const (
 	LayerTCP   Layer = "tcp"
 	LayerTLS   Layer = "tls"
 	LayerHTTP  Layer = "http"
+	LayerQUIC  Layer = "quic"
 	LayerTrace Layer = "trace"
 )
 
@@ -29,6 +30,7 @@ const (
 	FindingTLSHandshakeFailure FindingType = "tls_handshake_failure"
 	FindingSNICorrelated       FindingType = "sni_correlated_failure"
 	FindingHTTPFailure         FindingType = "http_application_failure"
+	FindingQUICFailure         FindingType = "quic_handshake_failure"
 	FindingPathQuality         FindingType = "path_quality_degraded"
 	FindingLocalNetworkIssue   FindingType = "local_network_issue"
 )
@@ -41,6 +43,7 @@ type Target struct {
 	Control    bool     `json:"control"`
 	HTTPPath   string   `json:"http_path"`
 	CompareSNI []string `json:"compare_sni,omitempty"`
+	QUICPort   int      `json:"quic_port,omitempty"`
 }
 
 type Resolver struct {
@@ -53,6 +56,7 @@ type ScanOptions struct {
 	Timeout time.Duration `json:"timeout"`
 	Retries int           `json:"retries"`
 	Trace   bool          `json:"trace"`
+	QUIC    bool          `json:"quic"`
 }
 
 type ScanReport struct {
@@ -70,6 +74,7 @@ type TargetResult struct {
 	TCP      []TCPObservation  `json:"tcp"`
 	TLS      []TLSObservation  `json:"tls"`
 	HTTP     []HTTPObservation `json:"http"`
+	QUIC     []QUICObservation `json:"quic,omitempty"`
 	Trace    *TraceObservation `json:"trace,omitempty"`
 	Findings []Finding         `json:"findings"`
 }
@@ -117,6 +122,16 @@ type HTTPObservation struct {
 	FirstByteLatency    time.Duration `json:"first_byte_latency,omitempty"`
 	Success             bool          `json:"success"`
 	Error               string        `json:"error,omitempty"`
+}
+
+type QUICObservation struct {
+	Address    string        `json:"address"`
+	SNI        string        `json:"sni"`
+	Version    string        `json:"version,omitempty"`
+	ALPN       string        `json:"alpn,omitempty"`
+	Latency    time.Duration `json:"latency"`
+	Success    bool          `json:"success"`
+	Error      string        `json:"error,omitempty"`
 }
 
 type TraceObservation struct {

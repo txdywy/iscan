@@ -28,6 +28,7 @@ func rootCommand() *cobra.Command {
 	var timeout time.Duration
 	var retries int
 	var trace bool
+	var quic bool
 	var targetSet string
 	var analyze bool
 
@@ -46,6 +47,7 @@ func rootCommand() *cobra.Command {
 				Timeout: timeout,
 				Retries: retries,
 				Trace:   trace,
+				QUIC:    quic,
 			})
 			var prof *profile.Profile
 			var rec *recommend.Recommendation
@@ -85,6 +87,7 @@ func rootCommand() *cobra.Command {
 	scanCmd.Flags().DurationVar(&timeout, "timeout", 5*time.Second, "per-probe timeout")
 	scanCmd.Flags().IntVar(&retries, "retries", 3, "retry count recorded in report")
 	scanCmd.Flags().BoolVar(&trace, "trace", true, "enable privileged ICMP trace probe")
+	scanCmd.Flags().BoolVar(&quic, "quic", false, "probe QUIC/UDP handshake on targets with quic_port")
 	scanCmd.Flags().StringVar(&targetSet, "target-set", "builtin", "target set to scan")
 	scanCmd.Flags().BoolVar(&analyze, "analyze", false, "include network profile and protocol rankings")
 	cmd.AddCommand(scanCmd)

@@ -16,6 +16,7 @@ import (
 	"iscan/internal/probe/httpprobe"
 	"iscan/internal/probe/tcp"
 	"iscan/internal/probe/tlsprobe"
+	"iscan/internal/probe/quicprobe"
 	"iscan/internal/probe/traceprobe"
 	"iscan/internal/targets"
 )
@@ -109,7 +110,22 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 			}
 		}
 	}
-	if options.Trace {
+	if options.QUIC && target.QUICPort > 0 {
+			quicPort := target.QUICPort
+			for _, address := range addresses {
+				if ctx.Err() != nil {
+					break
+				}
+				for attempt := 0; attempt < options.Retries; attempt++ {
+					observation := quicprobe.Probe(ctx, address, quicPort, target.Domain, []string{"h3"}, options.Timeout)
+					result.QUIC = append(result.QUIC, observation)
+					if observation.Success {
+						break
+					}
+				}
+			}
+		}
+		if options.Trace {
 		trace := traceprobe.Probe(ctx, target.Domain, options.Timeout)
 		result.Trace = &trace
 	}

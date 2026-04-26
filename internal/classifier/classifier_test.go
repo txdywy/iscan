@@ -110,6 +110,21 @@ func TestClassifyReportsHTTPApplicationFailure(t *testing.T) {
 	}
 }
 
+func TestClassifyReportsQUICHandshakeFailure(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "quic", Domain: "quic.example"},
+		QUIC: []model.QUICObservation{
+			{SNI: "quic.example", Success: false, Error: "timeout: no recent network activity"},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if !hasFinding(findings, model.FindingQUICFailure) {
+		t.Fatalf("expected quic_handshake_failure finding, got %#v", findings)
+	}
+}
+
 func TestClassifyDoesNotTreatTracePermissionErrorAsPathQuality(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "trace", Domain: "trace.example"},

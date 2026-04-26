@@ -11,6 +11,7 @@ func BuiltinTargets() []model.Target {
 			Ports:    []int{443},
 			Control:  true,
 			HTTPPath: "/",
+			QUICPort: 443,
 		},
 		{
 			Name:     "cloudflare-control",
@@ -19,6 +20,7 @@ func BuiltinTargets() []model.Target {
 			Ports:    []int{443},
 			Control:  true,
 			HTTPPath: "/",
+			QUICPort: 443,
 		},
 		{
 			Name:       "google-diagnostic",
@@ -27,6 +29,7 @@ func BuiltinTargets() []model.Target {
 			Ports:      []int{443},
 			HTTPPath:   "/",
 			CompareSNI: []string{"example.com"},
+			QUICPort:   443,
 		},
 	}
 }

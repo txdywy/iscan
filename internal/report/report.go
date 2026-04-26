@@ -25,15 +25,16 @@ func JSONExtended(scan model.ScanReport, prof *profile.Profile, rec *recommend.R
 
 func Summary(scan model.ScanReport) string {
 	var builder strings.Builder
-	builder.WriteString("TARGET\tDNS\tTCP\tTLS\tHTTP\tTRACE\tFINDINGS\n")
+	builder.WriteString("TARGET\tDNS\tTCP\tTLS\tQUIC\tHTTP\tTRACE\tFINDINGS\n")
 	for _, target := range scan.Targets {
 		fmt.Fprintf(
 			&builder,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			target.Target.Domain,
 			statusDNS(target.DNS),
 			statusTCP(target.TCP),
 			statusTLS(target.TLS),
+			statusQUIC(target.QUIC),
 			statusHTTP(target.HTTP),
 			statusTrace(target.Trace),
 			findingTypes(target.Findings),
@@ -88,6 +89,10 @@ func statusDNS(observations []model.DNSObservation) string {
 }
 
 func statusTCP(observations []model.TCPObservation) string {
+	return statusBool(len(observations), func(i int) bool { return observations[i].Success })
+}
+
+func statusQUIC(observations []model.QUICObservation) string {
 	return statusBool(len(observations), func(i int) bool { return observations[i].Success })
 }
 

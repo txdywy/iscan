@@ -59,6 +59,14 @@ func Classify(result model.TargetResult) []model.Finding {
 			Evidence:   evidence,
 		})
 	}
+	if evidence := quicFailures(result.QUIC); len(evidence) > 0 {
+		findings = append(findings, model.Finding{
+			Type:       model.FindingQUICFailure,
+			Layer:      model.LayerQUIC,
+			Confidence: model.ConfidenceLow,
+			Evidence:   evidence,
+		})
+	}
 	if result.Trace != nil && !result.Trace.Success && !isLocalTraceError(result.Trace.Error) {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingPathQuality,
@@ -223,6 +231,30 @@ func httpFailures(observations []model.HTTPObservation) []string {
 
 func isSuspiciousIP(ip net.IP) bool {
 	return ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+}
+
+func quicFailures(observations []model.QUICObservation) []string {
+	type state struct {
+		success bool
+		last    model.QUICObservation
+	}
+	byEndpoint := map[string]state{}
+	for _, observation := range observations {
+		key := observation.Address + "|" + observation.SNI
+		current := byEndpoint[key]
+		if observation.Success {
+			current.success = true
+		}
+		current.last = observation
+		byEndpoint[key] = current
+	}
+	var evidence []string
+	for _, current := range byEndpoint {
+		if !current.success {
+			evidence = append(evidence, fmt.Sprintf("%s failed: %s", current.last.SNI, current.last.Error))
+		}
+	}
+	return evidence
 }
 
 func isLocalTraceError(message string) bool {
