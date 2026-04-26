@@ -23,14 +23,14 @@ func Probe(ctx context.Context, url string, timeout time.Duration) model.HTTPObs
 		},
 	}
 
-	var connectStart, tlsStart, requestStart time.Time
+	var dnsStart, connectStart, tlsStart, requestStart time.Time
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(_ httptrace.DNSStartInfo) {
-			connectStart = time.Now()
+			dnsStart = time.Now()
 		},
 		DNSDone: func(_ httptrace.DNSDoneInfo) {
-			if !connectStart.IsZero() {
-				observation.DNSStartLatency = time.Since(connectStart)
+			if !dnsStart.IsZero() {
+				observation.DNSStartLatency = time.Since(dnsStart)
 			}
 		},
 		ConnectStart: func(_, _ string) {

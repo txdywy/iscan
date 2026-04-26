@@ -46,10 +46,12 @@ func Probe(ctx context.Context, resolver model.Resolver, domain string, qtype ui
 			observation.CNAMEs = append(observation.CNAMEs, rr.Target)
 		}
 	}
-	// If truncated, retry over TCP.
+	// If truncated, retry over TCP with updated latency.
 	if resp.Truncated {
+		tcpStart := time.Now()
 		tcpClient := &mdns.Client{Net: "tcp", Timeout: timeout}
 		resp, _, err = tcpClient.ExchangeContext(ctx, msg, server)
+		observation.Latency = time.Since(tcpStart)
 		if err == nil {
 			observation.RCode = mdns.RcodeToString[resp.Rcode]
 			observation.Success = resp.Rcode == mdns.RcodeSuccess
@@ -65,6 +67,8 @@ func Probe(ctx context.Context, resolver model.Resolver, domain string, qtype ui
 					observation.CNAMEs = append(observation.CNAMEs, rr.Target)
 				}
 			}
+		} else {
+			observation.Error = "truncated+tcp_fallback_failed: " + err.Error()
 		}
 	}
 	return observation

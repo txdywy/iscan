@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"net"
 	"strconv"
 	"time"
 
@@ -17,7 +18,7 @@ func Probe(ctx context.Context, host string, port int, sni string, alpn []string
 	if len(alpn) == 0 {
 		alpn = []string{"h3"}
 	}
-	address := host + ":" + strconv.Itoa(port)
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 	start := time.Now()
 
 	tlsConf := &tls.Config{

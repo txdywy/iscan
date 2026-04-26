@@ -95,13 +95,12 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 	}
 	for _, port := range target.Ports {
 		for _, address := range addresses {
-			for attempt := 0; attempt < options.Retries; attempt++ {
-				observation := tcp.Probe(ctx, address, port, options.Timeout)
-				result.TCP = append(result.TCP, observation)
-				if observation.Success {
-					break
-				}
-			}
+			obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
+				func() (model.TCPObservation, bool) {
+					o := tcp.Probe(ctx, address, port, options.Timeout)
+					return o, o.Success
+				})
+			result.TCP = append(result.TCP, obs)
 		}
 	}
 
@@ -116,13 +115,12 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 	}
 
 	if target.Scheme == "http" || HasSuccessfulTLSForSNI(result.TLS, target.Domain) {
-		for attempt := 0; attempt < options.Retries; attempt++ {
-			observation := httpprobe.Probe(ctx, TargetURL(target), options.Timeout)
-			result.HTTP = append(result.HTTP, observation)
-			if observation.Success {
-				break
-			}
-		}
+		obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
+			func() (model.HTTPObservation, bool) {
+				o := httpprobe.Probe(ctx, TargetURL(target), options.Timeout)
+				return o, o.Success
+			})
+		result.HTTP = append(result.HTTP, obs)
 	}
 	if options.QUIC && target.QUICPort > 0 {
 		quicPort := target.QUICPort
@@ -130,24 +128,22 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 			if ctx.Err() != nil {
 				break
 			}
-			for attempt := 0; attempt < options.Retries; attempt++ {
-				observation := quicprobe.Probe(ctx, address, quicPort, target.Domain, []string{"h3"}, options.Timeout)
-				result.QUIC = append(result.QUIC, observation)
-				if observation.Success {
-					break
-				}
-			}
+			obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
+				func() (model.QUICObservation, bool) {
+					o := quicprobe.Probe(ctx, address, quicPort, target.Domain, []string{"h3"}, options.Timeout)
+					return o, o.Success
+				})
+			result.QUIC = append(result.QUIC, obs)
 			for _, compareSNI := range target.CompareSNI {
 				if ctx.Err() != nil {
 					break
 				}
-				for attempt := 0; attempt < options.Retries; attempt++ {
-					observation := quicprobe.Probe(ctx, address, quicPort, compareSNI, []string{"h3"}, options.Timeout)
-					result.QUIC = append(result.QUIC, observation)
-					if observation.Success {
-						break
-					}
-				}
+				obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
+					func() (model.QUICObservation, bool) {
+						o := quicprobe.Probe(ctx, address, quicPort, compareSNI, []string{"h3"}, options.Timeout)
+						return o, o.Success
+					})
+				result.QUIC = append(result.QUIC, obs)
 			}
 		}
 	}
@@ -159,13 +155,12 @@ func scanTarget(ctx context.Context, target model.Target, resolvers []model.Reso
 }
 
 func probeTLSWithRetries(ctx context.Context, result *model.TargetResult, host string, port int, sni string, options model.ScanOptions) {
-	for attempt := 0; attempt < options.Retries; attempt++ {
-		observation := tlsprobe.Probe(ctx, host, port, sni, []string{"h2", "http/1.1"}, options.Timeout, true)
-		result.TLS = append(result.TLS, observation)
-		if observation.Success {
-			break
-		}
-	}
+	obs := retryWithBackoff(ctx, options.Retries, 50*time.Millisecond,
+		func() (model.TLSObservation, bool) {
+			o := tlsprobe.Probe(ctx, host, port, sni, []string{"h2", "http/1.1"}, options.Timeout, true)
+			return o, o.Success
+		})
+	result.TLS = append(result.TLS, obs)
 }
 
 func probeDNS(ctx context.Context, resolver model.Resolver, domain string, qtype uint16, timeout time.Duration) model.DNSObservation {
@@ -232,4 +227,29 @@ func TargetURL(target model.Target) string {
 		path = "/"
 	}
 	return (&url.URL{Scheme: target.Scheme, Host: target.Domain, Path: path}).String()
+}
+
+// retryWithBackoff calls probe up to maxAttempts times with exponential backoff.
+// Returns immediately on success or context cancellation.
+func retryWithBackoff[T any](ctx context.Context, maxAttempts int, baseDelay time.Duration, probe func() (T, bool)) T {
+	var zero T
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return zero
+		}
+		if result, ok := probe(); ok {
+			return result
+		}
+		if attempt < maxAttempts-1 {
+			delay := baseDelay * (1 << attempt)
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return zero
+			case <-timer.C:
+			}
+		}
+	}
+	return zero
 }

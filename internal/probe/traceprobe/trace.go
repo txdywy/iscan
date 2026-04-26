@@ -56,7 +56,7 @@ func Probe(ctx context.Context, target string, timeout time.Duration) (observati
 			observation.Error = err.Error()
 			return observation
 		}
-		hop, done := probeHop(conn, ip, ttl, timeout)
+		hop, done := probeHop(ctx, conn, ip, ttl, timeout)
 		observation.Hops = append(observation.Hops, hop)
 		if !done && isReadTimeout(hop.Error) {
 			consecutiveEmpty++
@@ -78,12 +78,18 @@ func isReadTimeout(errStr string) bool {
 	return strings.Contains(strings.ToLower(errStr), "timeout")
 }
 
-func probeHop(conn *icmp.PacketConn, ip net.IP, ttl int, timeout time.Duration) (model.TraceHop, bool) {
+func probeHop(ctx context.Context, conn *icmp.PacketConn, ip net.IP, ttl int, timeout time.Duration) (model.TraceHop, bool) {
+	select {
+	case <-ctx.Done():
+		return model.TraceHop{TTL: ttl, Error: ctx.Err().Error()}, false
+	default:
+	}
+	myID := os.Getpid() & 0xffff
 	message := icmp.Message{
 		Type: ipv4.ICMPTypeEcho,
 		Code: 0,
 		Body: &icmp.Echo{
-			ID:   os.Getpid() & 0xffff,
+			ID:   myID,
 			Seq:  ttl,
 			Data: []byte("iscan"),
 		},
@@ -105,6 +111,23 @@ func probeHop(conn *icmp.PacketConn, ip net.IP, ttl int, timeout time.Duration) 
 	parsed, err := icmp.ParseMessage(1, reply[:n])
 	if err != nil {
 		return model.TraceHop{TTL: ttl, Address: peer.String(), Error: err.Error()}, false
+	}
+	// Validate ICMP body matches our Echo request (ID + Seq).
+	switch body := parsed.Body.(type) {
+	case *icmp.Echo:
+		if body.ID != myID || body.Seq != ttl {
+			// Mismatch — likely from a concurrent probe or unrelated traffic.
+			return model.TraceHop{TTL: ttl, Address: peer.String(), RTT: time.Since(sent)}, false
+		}
+	case *icmp.TimeExceeded:
+		// Time Exceeded means we got a hop but haven't reached the target.
+		// The inner (original) packet data is unreliable for ID/Seq matching,
+		// so accept without validation.
+		return model.TraceHop{
+			TTL:     ttl,
+			Address: peer.String(),
+			RTT:     time.Since(sent),
+		}, false
 	}
 	return model.TraceHop{
 		TTL:     ttl,

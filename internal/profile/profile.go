@@ -268,7 +268,13 @@ func profilePath(report model.ScanReport) PathHealth {
 			devs[i] = d
 		}
 		sort.Float64s(devs)
-		medianDev := devs[len(devs)/2]
+		n := len(devs)
+		var medianDev float64
+		if n%2 == 0 {
+			medianDev = (devs[n/2-1] + devs[n/2]) / 2.0
+		} else {
+			medianDev = devs[n/2]
+		}
 		h.Jitter = time.Duration(medianDev)
 	}
 	if !h.TraceAvailable {
@@ -305,7 +311,7 @@ func profileQUIC(report model.ScanReport) QUICHealth {
 	}
 	if total == 0 {
 		// QUIC not probed — treat as neutral (no information = no problem).
-		h.Tier = QualityExcellent
+		h.Tier = QualityGood
 		return h
 	}
 	h.SuccessRate = float64(successes) / float64(total)

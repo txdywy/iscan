@@ -38,9 +38,10 @@ type Recommendation struct {
 }
 
 type Ranking struct {
-	Category string   `json:"category"`
-	Score    float64  `json:"score"`
-	Reasons  []string `json:"reasons"`
+	Category   string   `json:"category"`
+	Score      float64  `json:"score"`
+	Reasons    []string `json:"reasons"`
+	IsFallback bool     `json:"is_fallback"`
 }
 
 func Rank(report model.ScanReport, prof profile.Profile) Recommendation {
@@ -88,7 +89,8 @@ func Rank(report model.ScanReport, prof profile.Profile) Recommendation {
 	}
 
 	redundant := Ranking{
-		Category: "高重试鲁棒型 (high-redundancy retry)",
+		IsFallback: true,
+		Category:   "高重试鲁棒型 (high-redundancy retry)",
 		Score: weighted(
 			[][2]float64{
 				{weightRedundantConnectivity, anyConnectivity(tcp, tls)},

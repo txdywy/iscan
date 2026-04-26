@@ -7,7 +7,6 @@ var (
 	ErrTargetDomainRequired  = errors.New("target domain is required")
 	ErrTargetSchemeInvalid   = errors.New("target scheme must be http or https")
 	ErrTargetPortsRequired   = errors.New("target ports cannot be empty")
-	ErrResolverServerInvalid = errors.New("resolver server address is invalid")
 )
 
 // IsLocalPermissionError reports whether an error message indicates a local

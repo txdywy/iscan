@@ -54,10 +54,9 @@ func SummaryExtended(scan model.ScanReport, rec *recommend.Recommendation) strin
 	b.WriteString(Summary(scan))
 	if rec != nil {
 		b.WriteString("\nPROTOCOL RANKINGS\n")
-		for i, r := range rec.Rankings {
+		for _, r := range rec.Rankings {
 			icon := asciiIcon(r.Score)
-			// Mark the fallback strategy distinctly.
-			if i == len(rec.Rankings)-1 && r.Category == "高重试鲁棒型 (high-redundancy retry)" {
+			if r.IsFallback {
 				icon = "[F]"
 			}
 			fmt.Fprintf(&b, "  %s %s  score:%.2f  %s\n", icon, categoryStatus(r.Score), r.Score, r.Category)
@@ -117,9 +116,15 @@ func findingTypes(findings []model.Finding) string {
 	if len(findings) == 0 {
 		return "-"
 	}
+	seen := map[string]struct{}{}
 	types := make([]string, 0, len(findings))
 	for _, finding := range findings {
-		types = append(types, string(finding.Type))
+		t := string(finding.Type)
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		types = append(types, t)
 	}
 	return strings.Join(types, ",")
 }
