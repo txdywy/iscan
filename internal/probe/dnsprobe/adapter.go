@@ -42,6 +42,18 @@ func (a *Adapter) Run(ctx context.Context, target model.Target) model.ProbeResul
 		}
 	}
 
+	// Probe whoami.akamai.net for transparent proxy detection (per D-10)
+	for _, resolver := range resolvers {
+		if resolver.System {
+			continue // D-11: whoami only for resolvers with known server addresses
+		}
+		if err := waitLimiter(ctx, resolver.Name); err != nil {
+			break
+		}
+		whoamiObs := Probe(ctx, resolver, targets.WhoamiDomain, mdns.TypeA, 0)
+		observations = append(observations, whoamiObs)
+	}
+
 	return probe.NewResult(model.LayerDNS, observations)
 }
 

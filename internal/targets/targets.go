@@ -8,6 +8,9 @@ import (
 	"iscan/internal/model"
 )
 
+// WhoamiDomain is used for transparent DNS proxy detection.
+const WhoamiDomain = "whoami.akamai.net"
+
 var customResolvers []model.Resolver
 
 // AddCustomResolvers appends user-specified resolvers to the custom resolver list.
