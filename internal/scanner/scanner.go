@@ -13,6 +13,7 @@ import (
 	_ "iscan/internal/probe/quicprobe"
 	_ "iscan/internal/probe/tcp"
 	_ "iscan/internal/probe/tlsprobe"
+	_ "iscan/internal/probe/icmpping"
 	_ "iscan/internal/probe/traceprobe"
 
 	"iscan/internal/classifier"
@@ -80,6 +81,13 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 					}
 				}
 			}
+			if pr.Layer == model.LayerPing {
+				if obs, ok := pr.Data.(model.PingObservation); ok && !obs.Success {
+					if model.IsLocalPermissionError(obs.Error) {
+						report.Warnings = append(report.Warnings, targetList[i].Domain+": ping unavailable: "+obs.Error)
+					}
+				}
+			}
 		}
 		report.Findings = append(report.Findings, result.Findings...)
 		report.Targets = append(report.Targets, result)
@@ -108,6 +116,9 @@ func buildProbes(options model.ScanOptions) []probe.Probe {
 	add(model.LayerDNS)
 	add(model.LayerTCP)
 	add(model.LayerTLS)
+	if options.ICMPPing {
+		add(model.LayerPing)
+	}
 	add(model.LayerHTTP)
 	if options.QUIC {
 		add(model.LayerQUIC)

@@ -15,6 +15,8 @@ import (
 	"iscan/internal/recommend"
 	"iscan/internal/report"
 	"iscan/internal/scanner"
+
+	"iscan/internal/probe/icmpping"
 )
 
 func main() {
@@ -33,6 +35,8 @@ func rootCommand() *cobra.Command {
 	var quic bool
 	var targetSet string
 	var analyze bool
+	var pingTimeout time.Duration
+	var icmpPing bool
 
 	cmd := &cobra.Command{
 		Use:   "iscan",
@@ -52,10 +56,11 @@ than absolute censorship claims.`,
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			scan := scanner.Run(ctx, model.ScanOptions{
-				Timeout: timeout,
-				Retries: retries,
-				Trace:   trace,
-				QUIC:    quic,
+				Timeout:  timeout,
+				Retries:  retries,
+				Trace:    trace,
+				QUIC:     quic,
+				ICMPPing: icmpPing,
 			})
 			var prof *profile.Profile
 			var rec *recommend.Recommendation
@@ -98,6 +103,34 @@ than absolute censorship claims.`,
 	scanCmd.Flags().BoolVar(&quic, "quic", false, "probe QUIC/UDP handshake on targets with quic_port")
 	scanCmd.Flags().StringVar(&targetSet, "target-set", "builtin", "target set to scan")
 	scanCmd.Flags().BoolVar(&analyze, "analyze", false, "include network profile and protocol rankings")
+	scanCmd.Flags().BoolVar(&icmpPing, "icmp-ping", false, "enable ICMP ping probe")
+
+	pingCmd := &cobra.Command{
+		Use:   "ping <target>",
+		Short: "ICMP ping a target and print RTT + TTL",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := args[0]
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+			obs := icmpping.Probe(ctx, target, pingTimeout)
+			if obs.Success {
+				fmt.Printf("PING %s (%s): rtt=%s ttl=%d\n", target, obs.Address, obs.RTT, obs.TTL)
+			} else {
+				fmt.Printf("PING %s: failed — %s\n", target, obs.Error)
+				if model.IsLocalPermissionError(obs.Error) {
+					fmt.Fprintln(os.Stderr, "Note: ICMP ping requires root/administrator privileges on this system.")
+				}
+			}
+			if !obs.Success {
+				return fmt.Errorf("ping failed: %s", obs.Error)
+			}
+			return nil
+		},
+	}
+	pingCmd.Flags().DurationVar(&pingTimeout, "timeout", 5*time.Second, "ping timeout")
+
+	cmd.AddCommand(pingCmd)
 	cmd.AddCommand(scanCmd)
 	return cmd
 }
