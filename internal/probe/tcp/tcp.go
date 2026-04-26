@@ -13,11 +13,12 @@ import (
 	"iscan/internal/model"
 )
 
-func Probe(ctx context.Context, host string, port int, timeout time.Duration) model.TCPObservation {
+// ProbeNetwork is like Probe but allows specifying the network ("tcp", "tcp4", "tcp6").
+func ProbeNetwork(ctx context.Context, host string, port int, network string, timeout time.Duration) model.TCPObservation {
 	address := net.JoinHostPort(host, strconv.Itoa(port))
 	start := time.Now()
 	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", address)
+	conn, err := dialer.DialContext(ctx, network, address)
 	latency := time.Since(start)
 	if err != nil {
 		return model.TCPObservation{
@@ -38,6 +39,10 @@ func Probe(ctx context.Context, host string, port int, timeout time.Duration) mo
 		Latency: latency,
 		Success: true,
 	}
+}
+
+func Probe(ctx context.Context, host string, port int, timeout time.Duration) model.TCPObservation {
+	return ProbeNetwork(ctx, host, port, "tcp", timeout)
 }
 
 func classifyError(err error) string {

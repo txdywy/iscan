@@ -2,6 +2,7 @@ package tlsprobe
 
 import (
 	"context"
+	"net"
 
 	"iscan/internal/model"
 	"iscan/internal/probe"
@@ -21,12 +22,28 @@ type Adapter struct {
 }
 
 // Run performs a single TLS handshake and returns a ProbeResult.
+// When AddressFamily is set, pre-resolves the target to restrict address family
+// while preserving the original domain as SNI.
 func (a *Adapter) Run(ctx context.Context, target model.Target) model.ProbeResult {
 	sni := a.Opts.SNI
 	if sni == "" {
 		sni = target.Domain
 	}
-	obs := Probe(ctx, target.Domain, a.Opts.Port, sni, a.Opts.NextProtos, 0, a.Opts.InsecureSkipVerify)
+	host := target.Domain
+	if target.AddressFamily == "ipv6" || target.AddressFamily == "ipv4" {
+		ips, err := net.LookupIP(target.Domain)
+		if err == nil {
+			for _, ip := range ips {
+				if (target.AddressFamily == "ipv6" && ip.To4() == nil) ||
+					(target.AddressFamily == "ipv4" && ip.To4() != nil) {
+					host = ip.String()
+					break
+				}
+			}
+		}
+		// If resolution fails, fall back to hostname (Probe will handle the error).
+	}
+	obs := Probe(ctx, host, a.Opts.Port, sni, a.Opts.NextProtos, 0, a.Opts.InsecureSkipVerify)
 	return probe.NewResult(model.LayerTLS, obs)
 }
 

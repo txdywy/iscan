@@ -3,6 +3,8 @@ package httpprobe
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 
 	"iscan/internal/model"
 	probeapi "iscan/internal/probe"
@@ -29,7 +31,8 @@ func (a *Adapter) Run(ctx context.Context, target model.Target) model.ProbeResul
 	if path == "" {
 		path = "/"
 	}
-	url := fmt.Sprintf("%s://%s:%d%s", target.Scheme, target.Domain, a.Opts.Port, path)
+	hostPort := net.JoinHostPort(target.Domain, strconv.Itoa(a.Opts.Port))
+	url := fmt.Sprintf("%s://%s%s", target.Scheme, hostPort, path)
 	var obs model.HTTPObservation
 	if a.Opts.DialAddress != "" {
 		obs = ProbeWithAddress(ctx, url, a.Opts.DialAddress, 0)

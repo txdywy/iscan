@@ -20,6 +20,7 @@ type Adapter struct {
 }
 
 // Run performs a single QUIC handshake and returns a ProbeResult.
+// IPv6 is supported natively by quic-go via net.JoinHostPort bracketing.
 func (a *Adapter) Run(ctx context.Context, target model.Target) model.ProbeResult {
 	sni := a.Opts.SNI
 	if sni == "" {
