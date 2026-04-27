@@ -125,6 +125,42 @@ func TestClassifyReportsQUICHandshakeFailure(t *testing.T) {
 	}
 }
 
+func TestClassifyReportsTLSQUICDivergenceWhenTLSSucceedsAndQUICFails(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "google-diagnostic", Domain: "www.google.com", QUICPort: 443, CompareSNI: []string{"example.com"}},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerTLS, Data: model.TLSObservation{SNI: "example.com", Success: true, Address: "www.google.com:443"}},
+			{Layer: model.LayerQUIC, Data: model.QUICObservation{SNI: "example.com", Success: false, Error: "timeout: no recent network activity", Address: "www.google.com:443"}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	finding, ok := getFinding(findings, model.FindingTLSQUICDivergence)
+	if !ok {
+		t.Fatalf("expected tls_quic_divergence finding, got %#v", findings)
+	}
+	if finding.Confidence == model.ConfidenceLow {
+		t.Fatalf("expected divergence confidence above low, got %q", finding.Confidence)
+	}
+}
+
+func TestClassifyDoesNotReportTLSQUICDivergenceForDisabledQUIC(t *testing.T) {
+	result := model.TargetResult{
+		Target: model.Target{Name: "no-quic-control", Domain: "example.net", QUICPort: 0},
+		Results: []model.ProbeResult{
+			{Layer: model.LayerTLS, Data: model.TLSObservation{SNI: "example.net", Success: true, Address: "example.net:443"}},
+			{Layer: model.LayerQUIC, Data: model.QUICObservation{SNI: "example.net", Success: false, Error: "unsupported transport"}},
+		},
+	}
+
+	findings := classifier.Classify(result)
+
+	if hasFinding(findings, model.FindingTLSQUICDivergence) {
+		t.Fatalf("did not expect tls_quic_divergence for disabled QUIC: %#v", findings)
+	}
+}
+
 func TestClassifyDoesNotTreatTracePermissionErrorAsPathQuality(t *testing.T) {
 	result := model.TargetResult{
 		Target: model.Target{Name: "trace", Domain: "trace.example"},

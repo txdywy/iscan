@@ -34,10 +34,13 @@ func Classify(result model.TargetResult) []model.Finding {
 		findings = append(findings, model.Finding{
 			Type:       model.FindingDNSSuspiciousAnswer,
 			Layer:      model.LayerDNS,
-			Confidence: model.ConfidenceMedium,
+			Confidence: CalibrateConfidence(ConfidenceSignals{Base: model.ConfidenceMedium, EvidenceCount: len(evidence)}),
 			Evidence:   evidence,
 			ObservedAt: now,
 		})
+	}
+	if f := tlsQuicDivergence(result, tlsObs, quicObs, now); len(f) > 0 {
+		findings = append(findings, f...)
 	}
 	if f := dnsRcodeFindings(dnsObs, now); len(f) > 0 {
 		findings = append(findings, f...)
@@ -355,6 +358,127 @@ func rcodeConfidence(rcode string) model.Confidence {
 	default:
 		return model.ConfidenceLow
 	}
+}
+
+func tlsQuicDivergence(result model.TargetResult, tlsObs []model.TLSObservation, quicObs []model.QUICObservation, now time.Time) []model.Finding {
+	if result.Target.QUICPort == 0 || len(quicObs) == 0 {
+		return nil
+	}
+	if !hasUsableTLS(tlsObs) || !hasFailedQUIC(quicObs) {
+		return nil
+	}
+	if !hasComparableTransportFamily(result.Target, tlsObs, quicObs) {
+		return nil
+	}
+
+	evidence := []string{
+		fmt.Sprintf("%s has successful TLS observations for SNI %s", targetLabel(result.Target), strings.Join(successfulSNIs(tlsObs), ", ")),
+		fmt.Sprintf("%s has failed QUIC observations for SNI %s", targetLabel(result.Target), strings.Join(failedQUICSNIs(quicObs), ", ")),
+	}
+	return []model.Finding{{
+		Type:       model.FindingTLSQUICDivergence,
+		Layer:      model.LayerQUIC,
+		Confidence: CalibrateConfidence(ConfidenceSignals{Base: model.ConfidenceLow, EvidenceCount: len(evidence), CrossLayerAgreement: true}),
+		Evidence:   evidence,
+		ObservedAt: now,
+	}}
+}
+
+func hasUsableTLS(observations []model.TLSObservation) bool {
+	for _, obs := range observations {
+		if obs.Success {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFailedQUIC(observations []model.QUICObservation) bool {
+	for _, obs := range observations {
+		if !obs.Success && !isIgnoredQUICFailure(obs.Error) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasComparableTransportFamily(target model.Target, tlsObs []model.TLSObservation, quicObs []model.QUICObservation) bool {
+	if len(target.CompareSNI) == 0 {
+		return true
+	}
+	allowed := map[string]struct{}{}
+	for _, sni := range target.CompareSNI {
+		allowed[sni] = struct{}{}
+	}
+	for _, obs := range tlsObs {
+		if obs.Success {
+			if _, ok := allowed[obs.SNI]; ok {
+				return true
+			}
+		}
+	}
+	for _, obs := range quicObs {
+		if !obs.Success && !isIgnoredQUICFailure(obs.Error) {
+			if _, ok := allowed[obs.SNI]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func successfulSNIs(observations []model.TLSObservation) []string {
+	seen := map[string]struct{}{}
+	for _, obs := range observations {
+		if obs.Success && obs.SNI != "" {
+			seen[obs.SNI] = struct{}{}
+		}
+	}
+	var snis []string
+	for sni := range seen {
+		snis = append(snis, sni)
+	}
+	sort.Strings(snis)
+	return snis
+}
+
+func failedQUICSNIs(observations []model.QUICObservation) []string {
+	seen := map[string]struct{}{}
+	for _, obs := range observations {
+		if !obs.Success && !isIgnoredQUICFailure(obs.Error) && obs.SNI != "" {
+			seen[obs.SNI] = struct{}{}
+		}
+	}
+	var snis []string
+	for sni := range seen {
+		snis = append(snis, sni)
+	}
+	sort.Strings(snis)
+	return snis
+}
+
+func isIgnoredQUICFailure(err string) bool {
+	lower := strings.ToLower(err)
+	switch {
+	case lower == "":
+		return true
+	case strings.Contains(lower, "unsupported"), strings.Contains(lower, "not supported"):
+		return true
+	case strings.Contains(lower, "permission denied"), strings.Contains(lower, "operation not permitted"):
+		return true
+	default:
+		return false
+	}
+}
+
+func targetLabel(target model.Target) string {
+	if target.Name != "" {
+		return target.Name
+	}
+	if target.Domain != "" {
+		return target.Domain
+	}
+	return "unknown-target"
 }
 
 // detectTransparentDNSProxy checks whoami query responses against known resolver IPs.

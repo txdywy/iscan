@@ -19,6 +19,7 @@ import (
 	"iscan/internal/classifier"
 	"iscan/internal/model"
 	"iscan/internal/probe"
+	"iscan/internal/profile"
 	"iscan/internal/probe/middleware"
 	"iscan/internal/targets"
 )
@@ -100,6 +101,7 @@ func Run(ctx context.Context, options model.ScanOptions) model.ScanReport {
 		report.Findings = append(report.Findings, result.Findings...)
 		report.Targets = append(report.Targets, result)
 	}
+	report.Findings = append(report.Findings, profile.Correlate(report)...)
 	report.Duration = time.Since(start)
 	return report
 }

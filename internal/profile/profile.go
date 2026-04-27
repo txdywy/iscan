@@ -84,6 +84,17 @@ func BuildProfile(report model.ScanReport) Profile {
 	return p
 }
 
+func selectedTargets(report model.ScanReport) []model.TargetResult {
+	controlTargets, diagnosticTargets := splitTargets(report)
+	if len(diagnosticTargets) > 0 {
+		return diagnosticTargets
+	}
+	if len(controlTargets) > 0 {
+		return controlTargets
+	}
+	return report.Targets
+}
+
 // StabilityScore maps a quality tier to a numeric stability score.
 func StabilityScore(tier QualityTier) float64 {
 	switch tier {
@@ -115,7 +126,7 @@ func qualityTier(score float64) QualityTier {
 
 func extractISP(report model.ScanReport) ISPInfo {
 	info := ISPInfo{}
-	for _, target := range report.Targets {
+	for _, target := range selectedTargets(report) {
 		traceObs := collectObservation[model.TraceObservation](target.Results, model.LayerTrace)
 		if traceObs == nil || len(traceObs.Hops) == 0 {
 			continue
@@ -134,7 +145,7 @@ func profileDNS(report model.ScanReport) DNSHealth {
 	var totalLatency time.Duration
 	var latencyCount int
 
-	for _, target := range report.Targets {
+	for _, target := range selectedTargets(report) {
 		dnsObs := collectObservations[model.DNSObservation](target.Results, model.LayerDNS)
 		for _, obs := range dnsObs {
 			resolvers[obs.Resolver] = struct{}{}
@@ -173,7 +184,7 @@ func profileTCP(report model.ScanReport) TCPHealth {
 	var totalLatency time.Duration
 	var latencyCount int
 
-	for _, target := range report.Targets {
+	for _, target := range selectedTargets(report) {
 		tcpObs := collectObservations[model.TCPObservation](target.Results, model.LayerTCP)
 		for _, obs := range tcpObs {
 			total++
@@ -202,7 +213,7 @@ func profileTLS(report model.ScanReport) TLSHealth {
 	h := TLSHealth{HasSNIFiltering: hasFinding(report, model.FindingSNICorrelated)}
 	versions := map[string]struct{}{}
 	var successes, total int
-	for _, target := range report.Targets {
+	for _, target := range selectedTargets(report) {
 		tlsObs := collectObservations[model.TLSObservation](target.Results, model.LayerTLS)
 		for _, obs := range tlsObs {
 			total++
@@ -232,7 +243,7 @@ func profileTLS(report model.ScanReport) TLSHealth {
 func profilePath(report model.ScanReport) PathHealth {
 	h := PathHealth{}
 	var rtts []float64
-	for _, target := range report.Targets {
+	for _, target := range selectedTargets(report) {
 		traceObs := collectObservation[model.TraceObservation](target.Results, model.LayerTrace)
 		if traceObs == nil {
 			continue
@@ -306,7 +317,7 @@ func profilePath(report model.ScanReport) PathHealth {
 func profileQUIC(report model.ScanReport) QUICHealth {
 	h := QUICHealth{}
 	var successes, total int
-	for _, target := range report.Targets {
+	for _, target := range selectedTargets(report) {
 		quicObs := collectObservations[model.QUICObservation](target.Results, model.LayerQUIC)
 		for _, obs := range quicObs {
 			total++

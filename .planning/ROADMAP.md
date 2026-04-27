@@ -177,7 +177,7 @@ Eight sequenced phases that fix critical data-integrity bugs first, build a unif
 
 ## Phase 5: Classification and Profile Improvements
 
-**Status:** planned
+**Status:** completed
 **Plans:** 5 plans
 **Goal:** Classification produces evidence-weighted, composable findings. Profile computation separates control targets from diagnostic targets, enabling accurate cross-target correlation.
 **Dependencies:** Phase 3 (IPv6 findings) and Phase 4 (RCODE-specific findings produce richer input for classifiers)
